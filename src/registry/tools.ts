@@ -31,6 +31,7 @@ export interface CategoryInfo {
 }
 
 export const CATEGORIES: CategoryInfo[] = [
+  { id: 'file-opener', name: 'File Opener & Viewer', description: 'Instantly view and inspect PDF, ZIP, RAR, Word, Excel, PowerPoint, Images', iconName: 'FolderOpen' },
   { id: 'merge-split', name: 'Merge & Split', description: 'Combine multiple PDFs or divide pages into separate files', iconName: 'Layers' },
   { id: 'compress-pdf', name: 'Compress PDF', description: 'Reduce PDF file size without sacrificing document quality', iconName: 'Minimize2' },
   { id: 'convert-pdf', name: 'Convert PDF', description: 'Convert PDFs to Images, Text, HTML, or images to PDF', iconName: 'RefreshCw' },
@@ -44,6 +45,40 @@ export const CATEGORIES: CategoryInfo[] = [
 ];
 
 export const TOOLS: PDFTool[] = [
+  {
+    id: 'open-file',
+    name: 'Universal File Opener',
+    slug: 'open-file',
+    category: 'file-opener',
+    categoryName: 'File Opener & Viewer',
+    description: 'Instantly view, inspect, and open any PDF, ZIP, RAR, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Images, and Code in your browser with 100% privacy.',
+    shortDescription: 'Open PDF, ZIP, RAR, Word, Excel, PPTX, Images & Code instantly',
+    iconName: 'FolderOpen',
+    keywords: ['open file', 'file opener', 'file viewer', 'open zip', 'open rar', 'view docx', 'view excel', 'view pptx', 'open pdf', 'view pdf', 'image viewer'],
+    popular: true,
+    relatedToolIds: ['merge-pdf', 'compress-pdf', 'edit-pdf', 'sign-pdf'],
+    seo: {
+      title: 'Universal File Opener – Open PDF, ZIP, RAR, Word, Excel & PPTX Online',
+      metaDescription: 'Free online file opener and viewer. Open PDF, ZIP, RAR, DOCX, XLSX, PPTX, Images and Code files instantly in your browser with zero upload.',
+      h1: 'Instant Universal File Opener & Viewer',
+      intro: 'Open and inspect any popular file format directly in your browser. From PDFs and compressed archives to Word documents, Excel spreadsheets, PowerPoint presentations, and high-resolution images — all processed locally in memory with 100% confidentiality.',
+      howToSteps: [
+        { step: '1. Select or Drop File', text: 'Drag and drop any file (PDF, ZIP, RAR, DOCX, XLSX, PPTX, Image) or click to browse.' },
+        { step: '2. Instant In-Browser Render', text: 'The document or archive opens in milliseconds with no upload waiting time.' },
+        { step: '3. Inspect & Interact', text: 'Browse pages, extract archive contents, filter spreadsheet rows, present slides, or zoom images.' },
+        { step: '4. Export or Edit', text: 'Send directly to PDFCraft editing tools, download extracted files, or print.' }
+      ],
+      features: [
+        { title: 'Zero Server Uploads', desc: '100% private. Files are processed entirely inside your device browser memory.' },
+        { title: 'Wide Format Support', desc: 'Opens PDF, ZIP, RAR, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), images, audio, video, and code.' },
+        { title: 'PWA & OS Integration', desc: 'Set as default viewer on mobile or desktop to open files directly from WhatsApp or file managers.' }
+      ],
+      faqs: [
+        { question: 'Can this open files directly from WhatsApp or mobile downloads?', answer: 'Yes! Install PDFCraft as a Web App (PWA) or use your browser Share menu to open files directly into PDFCraft instantly.' },
+        { question: 'Are my confidential documents uploaded to any server?', answer: 'Never. All parsing and rendering (PDF.js, JSZip, WebAssembly Unrar, SheetJS, docx-preview) runs 100% locally in your browser.' }
+      ]
+    }
+  },
   {
     id: 'merge-pdf',
     name: 'Merge PDF',

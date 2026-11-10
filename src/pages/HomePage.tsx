@@ -14,19 +14,22 @@ import { ToolIcon } from '../components/ToolIcon';
 import { useReveal, spotlight } from '../hooks/useReveal';
 
 import { HeroNetwork } from '../components/HeroNetwork';
+import { InstantFileOpenerCard } from '../components/FileViewer/InstantFileOpenerCard';
 
 interface HomePageProps {
   onSelectTool: (slug: string) => void;
   onOpenSearch: () => void;
   activeCategory: string;
   onSelectCategory: (catId: string) => void;
+  onOpenFile: (file: File) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({
   onSelectTool,
   onOpenSearch,
   activeCategory,
-  onSelectCategory
+  onSelectCategory,
+  onOpenFile
 }) => {
   const [searchQuery] = useState('');
   const popularRef = useReveal<HTMLElement>();
@@ -58,6 +61,9 @@ export const HomePage: React.FC<HomePageProps> = ({
           if (el) el.scrollIntoView({ behavior: 'smooth' });
         }}
       />
+
+      {/* Universal Instant File Opener Dropzone & Viewer Card */}
+      <InstantFileOpenerCard onFileSelected={onOpenFile} />
 
       <div className="max-w-xl mx-auto pt-2">
         <div

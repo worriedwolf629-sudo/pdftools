@@ -23,6 +23,7 @@ import type {
 
 interface ToolWorkstationProps {
   tool: PDFTool;
+  initialFiles?: File[];
 }
 
 type Result = { blob: Blob; filename: string };
@@ -38,9 +39,9 @@ const MULTI_TOOLS = ['merge-pdf', 'jpg-to-pdf', 'compare-pdf'];
 const TEXT_TOOLS = ['text-to-pdf', 'markdown-to-pdf'];
 const needsFile = (id: string) => !TEXT_TOOLS.includes(id);
 
-export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool }) => {
+export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialFiles }) => {
   const id = tool.id;
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(initialFiles || []);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ pct: 0, label: '' });
   const [error, setError] = useState('');
@@ -187,6 +188,12 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool }) => {
 
     try {
       switch (id) {
+        case 'open-file':
+          if (f) {
+            setSuccess(`Loaded ${f.name} for instant viewing.`);
+          }
+          break;
+
         case 'merge-pdf':
           finishPdf(await mergePDFs(files, onProgress), 'merged_document.pdf', `Merged ${files.length} files into one PDF.`);
           break;

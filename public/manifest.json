@@ -1,15 +1,89 @@
 {
   "short_name": "PDFCraft",
-  "name": "PDFCraft – All-In-One PDF Platform",
+  "name": "PDFCraft – Universal File Opener & PDF Platform",
+  "description": "Instant viewer and opener for PDF, ZIP, RAR, Word (DOCX), Excel (XLSX), PowerPoint (PPTX), Images and Text files with 100% privacy.",
   "icons": [
     {
-      "src": "favicon.svg",
+      "src": "/favicon.svg",
       "type": "image/svg+xml",
-      "sizes": "512x512"
+      "sizes": "192x192 512x512"
     }
   ],
-  "start_url": ".",
+  "start_url": "/?source=pwa",
   "background_color": "#0b0f19",
   "theme_color": "#4f46e5",
-  "display": "standalone"
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["utilities", "productivity"],
+  "file_handlers": [
+    {
+      "action": "/?open=file",
+      "name": "PDF Document",
+      "accept": {
+        "application/pdf": [".pdf"]
+      }
+    },
+    {
+      "action": "/?open=file",
+      "name": "Archive (ZIP / RAR)",
+      "accept": {
+        "application/zip": [".zip"],
+        "application/x-zip-compressed": [".zip"],
+        "application/x-rar-compressed": [".rar"],
+        "application/vnd.rar": [".rar"],
+        "application/x-rar": [".rar"]
+      }
+    },
+    {
+      "action": "/?open=file",
+      "name": "Office Document (Word, Excel, PowerPoint)",
+      "accept": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+        "application/msword": [".doc"],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+        "application/vnd.ms-excel": [".xls"],
+        "text/csv": [".csv"],
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+        "application/vnd.ms-powerpoint": [".ppt"]
+      }
+    },
+    {
+      "action": "/?open=file",
+      "name": "Image & Graphic",
+      "accept": {
+        "image/png": [".png"],
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/webp": [".webp"],
+        "image/svg+xml": [".svg"],
+        "image/gif": [".gif"],
+        "image/bmp": [".bmp"]
+      }
+    },
+    {
+      "action": "/?open=file",
+      "name": "Text & Code",
+      "accept": {
+        "text/plain": [".txt", ".log", ".env", ".ini"],
+        "text/markdown": [".md"],
+        "application/json": [".json"],
+        "text/html": [".html", ".htm"],
+        "text/xml": [".xml"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "file",
+          "accept": ["*/*"]
+        }
+      ]
+    }
+  }
 }
