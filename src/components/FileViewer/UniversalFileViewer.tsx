@@ -1,17 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
-  ArrowLeft, FolderOpen, Maximize2, Minimize2, Download,
-  FileText, Share2
+  ArrowLeft, FolderOpen, Maximize2, Minimize2, Share2
 } from 'lucide-react';
-import { detectFileType } from '../../utils/fileDetector';
-import { PdfViewer } from './PdfViewer';
-import { ArchiveViewer } from './ArchiveViewer';
-import { SpreadsheetViewer } from './SpreadsheetViewer';
-import { DocumentViewer } from './DocumentViewer';
-import { PresentationViewer } from './PresentationViewer';
-import { ImageViewer } from './ImageViewer';
-import { TextViewer } from './TextViewer';
-import { MediaViewer } from './MediaViewer';
+import { pickSingleFile } from '../../utils/filePicker';
+import { FileRouter, getRouteForExtension } from './FileRouter';
 
 interface UniversalFileViewerProps {
   file: File | Blob;
@@ -30,7 +23,7 @@ export const UniversalFileViewer: React.FC<UniversalFileViewerProps> = ({
 }) => {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const actualName = file instanceof File ? file.name : fileName;
-  const meta = detectFileType({ name: actualName, type: file.type });
+  const { extension } = getRouteForExtension(actualName);
 
   const formatFileSize = (bytes: number): string => {
     if (!bytes) return '0 B';
@@ -59,6 +52,19 @@ export const UniversalFileViewer: React.FC<UniversalFileViewerProps> = ({
       } catch (e) {
         console.log('Share dismissed');
       }
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleOpenAnotherFile = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const newFile = await pickSingleFile();
+      if (newFile) {
+        onSelectAnotherFile(newFile);
+      }
+    } else {
+      fileInputRef.current?.click();
     }
   };
 
@@ -91,7 +97,7 @@ export const UniversalFileViewer: React.FC<UniversalFileViewerProps> = ({
               {actualName}
             </span>
             <span className="hidden sm:inline-block text-[11px] font-semibold uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
-              {meta.label}
+              {extension ? `.${extension.toUpperCase()}` : 'FILE'}
             </span>
             {file.size > 0 && (
               <span className="hidden md:inline-block text-[11px] text-slate-400 font-mono shrink-0">
@@ -104,15 +110,19 @@ export const UniversalFileViewer: React.FC<UniversalFileViewerProps> = ({
         {/* Right: Actions */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Open Another File Native Picker */}
-          <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 cursor-pointer transition-all hover:scale-105 active:scale-95">
+          <button
+            onClick={handleOpenAnotherFile}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 cursor-pointer transition-all hover:scale-105 active:scale-95"
+          >
             <FolderOpen className="w-4 h-4 text-indigo-400" />
             <span className="hidden sm:inline">Open Another File</span>
-            <input
-              type="file"
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-          </label>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handleFileInputChange}
+            className="hidden"
+          />
 
           {/* Web Share API */}
           {'share' in navigator && file instanceof File && (
@@ -136,65 +146,14 @@ export const UniversalFileViewer: React.FC<UniversalFileViewerProps> = ({
         </div>
       </div>
 
-      {/* Render Component According to Detected File Type */}
+      {/* Route to Extension-Based Viewer */}
       <div className="flex-1 w-full overflow-hidden">
-        {meta.type === 'pdf' ? (
-          <PdfViewer
-            file={file}
-            fileName={actualName}
-            onOpenWithTool={onOpenWithPdfCraftTool}
-          />
-        ) : meta.type === 'zip' || meta.type === 'rar' ? (
-          <ArchiveViewer
-            file={file}
-            fileName={actualName}
-            isRar={meta.type === 'rar'}
-            onPreviewSubFile={onSelectAnotherFile}
-          />
-        ) : meta.type === 'xlsx' ? (
-          <SpreadsheetViewer file={file} fileName={actualName} />
-        ) : meta.type === 'docx' ? (
-          <DocumentViewer file={file} fileName={actualName} />
-        ) : meta.type === 'pptx' ? (
-          <PresentationViewer file={file} fileName={actualName} />
-        ) : meta.type === 'image' ? (
-          <ImageViewer
-            file={file}
-            fileName={actualName}
-            onOpenWithTool={onOpenWithPdfCraftTool}
-          />
-        ) : meta.type === 'markdown' ? (
-          <TextViewer file={file} fileName={actualName} isMarkdown={true} />
-        ) : meta.type === 'json' ? (
-          <TextViewer file={file} fileName={actualName} isJson={true} />
-        ) : meta.type === 'text' ? (
-          <TextViewer file={file} fileName={actualName} />
-        ) : meta.type === 'video' ? (
-          <MediaViewer file={file} fileName={actualName} isVideo={true} />
-        ) : meta.type === 'audio' ? (
-          <MediaViewer file={file} fileName={actualName} isVideo={false} />
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-300">
-            <FileText className="w-16 h-16 text-slate-600 mb-4" />
-            <h3 className="text-lg font-bold text-white mb-2">{actualName}</h3>
-            <p className="text-xs text-slate-400 mb-6 max-w-md">
-              Binary / generic file format ({formatFileSize(file.size)}). You can download this file to open with your system software.
-            </p>
-            <button
-              onClick={() => {
-                const url = URL.createObjectURL(file);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = actualName;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 font-semibold text-xs text-white rounded-xl shadow-lg inline-flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" /> Download File
-            </button>
-          </div>
-        )}
+        <FileRouter
+          file={file}
+          fileName={actualName}
+          onSelectAnotherFile={onSelectAnotherFile}
+          onOpenWithTool={onOpenWithPdfCraftTool}
+        />
       </div>
     </div>
   );

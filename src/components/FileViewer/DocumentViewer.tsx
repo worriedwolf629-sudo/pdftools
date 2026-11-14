@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText, Download, Printer, ZoomIn, ZoomOut, Loader2, AlertCircle } from 'lucide-react';
-import { renderAsync } from 'docx-preview';
+import mammoth from 'mammoth';
 
 interface DocumentViewerProps {
   file: File | Blob;
@@ -8,7 +8,7 @@ interface DocumentViewerProps {
 }
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [htmlContent, setHtmlContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [scale, setScale] = useState<number>(1);
@@ -30,12 +30,10 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
         const isDoc = fileName.toLowerCase().endsWith('.doc');
 
         if (isDoc) {
-          // Legacy .doc format (binary CFBF, not docx zip)
+          // Legacy .doc binary file
           setIsLegacyDoc(true);
-          // Extract ascii/utf-16 text chunks
           const dec = new TextDecoder('utf-8', { fatal: false });
           const raw = dec.decode(buffer);
-          // filter printable chars
           const cleaned = raw
             .replace(/[^\x20-\x7E\t\n\r]/g, ' ')
             .replace(/\s{2,}/g, '\n')
@@ -45,22 +43,19 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
           return;
         }
 
-        // Render DOCX with docx-preview
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';
-          await renderAsync(buffer, containerRef.current, undefined, {
-            className: 'docx-preview-doc',
-            inWrapper: true,
-            ignoreWidth: false,
-            ignoreHeight: false,
-            ignoreFonts: false,
-            breakPages: true
-          });
+        // Render DOCX with mammoth.js
+        const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+        if (isCancelled) return;
+
+        if (result.value) {
+          setHtmlContent(result.value);
+        } else {
+          setHtmlContent('<p class="text-slate-500 italic">This document appears to be empty.</p>');
         }
       } catch (err: any) {
         if (!isCancelled) {
-          console.error('Docx render error:', err);
-          setError(err?.message || 'Failed to render Word document.');
+          console.error('Mammoth docx convert error:', err);
+          setError(err?.message || 'Failed to render Word document with mammoth.js.');
         }
       } finally {
         if (!isCancelled) setLoading(false);
@@ -86,21 +81,32 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
       window.print();
       return;
     }
-    const container = containerRef.current;
-    if (!container) return;
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     printWindow.document.write(`
+      <!DOCTYPE html>
       <html>
         <head>
           <title>${fileName}</title>
           <style>
-            body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; }
-            .docx-preview-doc { width: 100% !important; margin: 0 auto; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              padding: 40px;
+              color: #111827;
+              line-height: 1.6;
+            }
+            p { margin-bottom: 1em; }
+            h1, h2, h3, h4, h5, h6 { margin-top: 1.5em; margin-bottom: 0.5em; font-weight: bold; }
+            table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+            th, td { border: 1px solid #d1d5db; padding: 8px 12px; }
+            img { max-width: 100%; height: auto; }
+            ul, ol { margin-left: 24px; margin-bottom: 1em; }
           </style>
         </head>
         <body>
-          ${container.innerHTML}
+          <div class="mammoth-content">
+            ${htmlContent}
+          </div>
         </body>
       </html>
     `);
@@ -121,7 +127,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
             <h3 className="font-bold text-base sm:text-lg text-white flex items-center gap-2">
               {fileName}
               <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                {isLegacyDoc ? 'Word .doc' : 'Word .docx'}
+                {isLegacyDoc ? 'Word .doc' : 'Word .docx (mammoth.js)'}
               </span>
             </h3>
             <p className="text-xs text-slate-400">
@@ -136,7 +142,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
             <div className="flex items-center gap-1 bg-slate-800/90 rounded-xl p-1 border border-slate-700/80">
               <button
                 onClick={() => setScale((s) => Math.max(0.6, s - 0.1))}
-                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200"
+                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200 transition-colors"
                 title="Zoom Out"
               >
                 <ZoomOut className="w-4 h-4" />
@@ -146,7 +152,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
               </span>
               <button
                 onClick={() => setScale((s) => Math.min(1.8, s + 0.1))}
-                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200"
+                className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200 transition-colors"
                 title="Zoom In"
               >
                 <ZoomIn className="w-4 h-4" />
@@ -156,7 +162,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-colors"
             title="Print Document"
           >
             <Printer className="w-4 h-4" /> Print
@@ -164,7 +170,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
 
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-xs text-white shadow-md shadow-blue-600/30"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-xs text-white shadow-md shadow-blue-600/30 transition-all hover:scale-105 active:scale-95"
             title="Download Word Document"
           >
             <Download className="w-4 h-4" /> Download
@@ -177,7 +183,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
             <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-            <span className="text-sm font-medium">Rendering Word document...</span>
+            <span className="text-sm font-medium">Converting Word document with mammoth.js...</span>
           </div>
         ) : error ? (
           <div className="p-6 max-w-md mx-auto my-12 bg-red-950/60 border border-red-800 rounded-2xl text-center text-red-200">
@@ -205,13 +211,15 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, fileName }
         ) : (
           <div
             style={{ transform: `scale(${scale})`, transformOrigin: 'top center' }}
-            className="transition-transform duration-150 ease-out mb-12 shadow-2xl rounded-xl bg-white text-slate-900 p-8 max-w-4xl w-full overflow-hidden"
+            className="transition-transform duration-150 ease-out mb-12 shadow-2xl rounded-xl bg-white text-slate-900 p-8 sm:p-12 max-w-4xl w-full overflow-hidden"
           >
-            <div ref={containerRef} className="docx-render-container" />
+            <div
+              className="prose max-w-none text-slate-900 leading-relaxed font-sans [&>p]:mb-4 [&>h1]:text-2xl [&>h1]:font-bold [&>h1]:mb-3 [&>h2]:text-xl [&>h2]:font-bold [&>h2]:mb-2 [&>h3]:text-lg [&>h3]:font-semibold [&>ul]:list-disc [&>ul]:ml-6 [&>ul]:mb-4 [&>ol]:list-decimal [&>ol]:ml-6 [&>ol]:mb-4 [&>table]:border-collapse [&>table]:w-full [&>table]:my-4 [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:p-2 [&_th]:bg-slate-100 [&_img]:max-w-full [&_img]:h-auto [&_img]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_blockquote]:italic"
+              dangerouslySetInnerHTML={{ __html: htmlContent }}
+            />
           </div>
         )}
       </div>
     </div>
   );
 };
-

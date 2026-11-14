@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   FileCode, Download, Copy, Check, Search, WrapText, Eye, Code, Loader2
 } from 'lucide-react';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 
 interface TextViewerProps {
   file: File | Blob;
@@ -10,18 +12,62 @@ interface TextViewerProps {
   isJson?: boolean;
 }
 
+const EXT_TO_LANG: Record<string, string> = {
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  mts: 'typescript',
+  cts: 'typescript',
+  tsx: 'typescript',
+  java: 'java',
+  json: 'json',
+  html: 'xml',
+  htm: 'xml',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  py: 'python',
+  c: 'c',
+  cpp: 'cpp',
+  h: 'c',
+  hpp: 'cpp',
+  rs: 'rust',
+  go: 'go',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  sql: 'sql',
+  yaml: 'yaml',
+  yml: 'yaml',
+  xml: 'xml',
+  md: 'markdown',
+  markdown: 'markdown'
+};
+
 export const TextViewer: React.FC<TextViewerProps> = ({
   file,
   fileName,
   isMarkdown = false,
   isJson = false
 }) => {
-  const [formattedContent, setFormattedContent] = useState<string>('');
+  const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
   const [wrapLines, setWrapLines] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'source' | 'rendered'>(isMarkdown ? 'rendered' : 'source');
   const [copied, setCopied] = useState<boolean>(false);
+
+  const extension = useMemo(() => {
+    return (fileName.split('.').pop() || '').toLowerCase();
+  }, [fileName]);
+
+  const detectedLanguage = useMemo(() => {
+    if (isJson) return 'json';
+    if (isMarkdown) return 'markdown';
+    return EXT_TO_LANG[extension] || '';
+  }, [extension, isJson, isMarkdown]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -32,15 +78,15 @@ export const TextViewer: React.FC<TextViewerProps> = ({
         const text = await file.text();
         if (isCancelled) return;
 
-        if (isJson || fileName.toLowerCase().endsWith('.json')) {
+        if (isJson || extension === 'json') {
           try {
             const parsed = JSON.parse(text);
-            setFormattedContent(JSON.stringify(parsed, null, 2));
+            setContent(JSON.stringify(parsed, null, 2));
           } catch {
-            setFormattedContent(text);
+            setContent(text);
           }
         } else {
-          setFormattedContent(text);
+          setContent(text);
         }
       } catch (err) {
         console.error('Failed to read text file:', err);
@@ -52,16 +98,32 @@ export const TextViewer: React.FC<TextViewerProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [file, isJson, fileName]);
+  }, [file, isJson, extension]);
+
+  const highlightedHtml = useMemo(() => {
+    if (!content) return '';
+    try {
+      if (detectedLanguage && hljs.getLanguage(detectedLanguage)) {
+        return hljs.highlight(content, { language: detectedLanguage }).value;
+      }
+      return hljs.highlightAuto(content).value;
+    } catch {
+      // Fallback escape
+      return content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+  }, [content, detectedLanguage]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(formattedContent);
+    navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    const blob = new Blob([formattedContent], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -70,9 +132,9 @@ export const TextViewer: React.FC<TextViewerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const lines = formattedContent.split('\n');
-  const wordCount = formattedContent.trim() ? formattedContent.trim().split(/\s+/).length : 0;
-  const charCount = formattedContent.length;
+  const lines = useMemo(() => content.split('\n'), [content]);
+  const wordCount = useMemo(() => (content.trim() ? content.trim().split(/\s+/).length : 0), [content]);
+  const charCount = content.length;
 
   return (
     <div className="flex flex-col h-full bg-slate-900/90 text-white rounded-2xl overflow-hidden border border-slate-700/60 shadow-2xl backdrop-blur-md">
@@ -86,7 +148,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({
             <h3 className="font-bold text-base sm:text-lg text-white flex items-center gap-2">
               {fileName}
               <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                {isJson ? 'JSON' : isMarkdown ? 'Markdown' : 'Code / Text'}
+                {detectedLanguage || extension.toUpperCase() || 'TEXT'}
               </span>
             </h3>
             <p className="text-xs text-slate-400">
@@ -98,7 +160,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({
         {/* Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Search */}
-          <div className="relative w-44 sm:w-56">
+          <div className="relative w-40 sm:w-52">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -130,7 +192,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                <Code className="w-3.5 h-3.5" /> Raw
+                <Code className="w-3.5 h-3.5" /> Code
               </button>
             </div>
           )}
@@ -138,7 +200,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({
           {/* Wrap text toggle */}
           <button
             onClick={() => setWrapLines(!wrapLines)}
-            className={`p-2 rounded-xl border text-slate-200 ${
+            className={`p-2 rounded-xl border text-slate-200 transition-colors ${
               wrapLines ? 'bg-cyan-600/30 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-700'
             }`}
             title="Toggle Word Wrap"
@@ -148,7 +210,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({
 
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition-colors"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
             {copied ? 'Copied' : 'Copy'}
@@ -156,23 +218,22 @@ export const TextViewer: React.FC<TextViewerProps> = ({
 
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-semibold text-xs text-white shadow-md shadow-cyan-600/30"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-semibold text-xs text-white shadow-md shadow-cyan-600/30 transition-all hover:scale-105 active:scale-95"
           >
             <Download className="w-4 h-4" /> Download
           </button>
         </div>
       </div>
 
-      {/* Main Text Content */}
+      {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-950/70">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
             <Loader2 className="w-10 h-10 animate-spin text-cyan-500" />
-            <span className="text-sm font-medium">Reading text content...</span>
+            <span className="text-sm font-medium">Reading code & syntax highlighting with highlight.js...</span>
           </div>
         ) : isMarkdown && viewMode === 'rendered' ? (
           <div className="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-8 text-slate-200 leading-relaxed font-sans space-y-4 shadow-xl">
-            {/* Simple Markdown Render */}
             {lines.map((line, idx) => {
               if (line.startsWith('# ')) {
                 return <h1 key={idx} className="text-3xl font-extrabold text-white border-b border-slate-800 pb-2">{line.replace('# ', '')}</h1>;
@@ -215,21 +276,14 @@ export const TextViewer: React.FC<TextViewerProps> = ({
               ))}
             </div>
 
-            {/* Code text lines */}
-            <div className={`flex-1 ${wrapLines ? 'whitespace-pre-wrap' : 'whitespace-pre'}`}>
-              {lines.map((line, i) => {
-                const isMatch = search && line.toLowerCase().includes(search.toLowerCase());
-                return (
-                  <div
-                    key={i}
-                    className={`leading-6 ${
-                      isMatch ? 'bg-cyan-500/20 text-cyan-200 font-bold px-1 rounded' : 'text-slate-200'
-                    }`}
-                  >
-                    {line || '\u00A0'}
-                  </div>
-                );
-              })}
+            {/* Syntax Highlighted Code via highlight.js */}
+            <div className={`flex-1 ${wrapLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
+              <pre className="!bg-transparent !p-0 !m-0 font-mono text-xs leading-6">
+                <code
+                  className={`hljs ${detectedLanguage ? `language-${detectedLanguage}` : ''}`}
+                  dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                />
+              </pre>
             </div>
           </div>
         )}

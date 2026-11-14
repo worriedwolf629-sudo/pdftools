@@ -1,7 +1,9 @@
 import React, { useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import {
   Zap, ShieldCheck, FolderOpen, FileText, Archive, Table, Presentation, Image as ImageIcon, Sparkles
 } from 'lucide-react';
+import { pickSingleFile } from '../../utils/filePicker';
 
 interface InstantFileOpenerCardProps {
   onFileSelected: (file: File) => void;
@@ -20,6 +22,17 @@ export const InstantFileOpenerCard: React.FC<InstantFileOpenerCardProps> = ({ on
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onFileSelected(e.target.files[0]);
+    }
+  };
+
+  const handleSelectFile = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const file = await pickSingleFile();
+      if (file) {
+        onFileSelected(file);
+      }
+    } else {
+      inputRef.current?.click();
     }
   };
 
@@ -84,7 +97,7 @@ export const InstantFileOpenerCard: React.FC<InstantFileOpenerCardProps> = ({ on
             className="hidden"
           />
           <button
-            onClick={() => inputRef.current?.click()}
+            onClick={handleSelectFile}
             className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-extrabold text-sm sm:text-base shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-3 transition-all hover:scale-105 active:scale-95 cursor-pointer"
           >
             <FolderOpen className="w-5 h-5" />

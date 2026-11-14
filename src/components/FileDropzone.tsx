@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { UploadCloud, File as FileIcon, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { pickFiles } from '../utils/filePicker';
 
 interface FileDropzoneProps {
   accept?: string;
@@ -44,7 +46,7 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const deliver = (list: FileList | null) => {
+  const deliver = (list: FileList | File[] | null) => {
     if (!list || list.length === 0) return;
     let selected = Array.from(list);
     // Respect `accept` for drag & drop too (the file dialog already filters, drop does not).
@@ -55,16 +57,27 @@ export const FileDropzone: React.FC<FileDropzoneProps> = ({
     if (selected.length) onFilesSelected(selected);
   };
 
+  const handleZoneClick = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const picked = await pickFiles({ accept, multiple });
+      if (picked.length > 0) {
+        deliver(picked);
+      }
+    } else {
+      inputRef.current?.click();
+    }
+  };
+
   return (
     <div className="w-full space-y-4">
       <div
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleZoneClick()}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => { e.preventDefault(); setIsDragging(false); deliver(e.dataTransfer.files); }}
-        onClick={() => inputRef.current?.click()}
+        onClick={handleZoneClick}
         className={`relative rounded-2xl p-8 sm:p-12 text-center cursor-pointer transition-all duration-300 group outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
           isDragging
             ? 'dropzone-active bg-indigo-50/80 dark:bg-indigo-950/40 shadow-xl scale-[1.015]'

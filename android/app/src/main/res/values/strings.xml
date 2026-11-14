@@ -1,3 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">PDFCraft</string>
+    <string name="app_name">PDF Tools</string>
+    <string name="title_activity_main">PDF Tools</string>
+    <string name="package_name">com.arish.pdftools</string>
+    <string name="custom_url_scheme">com.arish.pdftools</string>
 </resources>

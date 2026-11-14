@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Search, Moon, Sun, ShieldCheck, ChevronDown, Layers, FileText, Menu, X, FolderOpen } from 'lucide-react';
 import { CATEGORIES } from '../registry/tools';
+import { pickSingleFile } from '../utils/filePicker';
 
 interface HeaderProps {
   onOpenSearch: () => void;
@@ -23,6 +25,18 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const headerFileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleHeaderOpenFile = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const file = await pickSingleFile();
+      if (file && onOpenFile) {
+        onOpenFile(file);
+      }
+    } else {
+      headerFileRef.current?.click();
+    }
+  };
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -74,11 +88,9 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-3">
           {/* Instant Open Any File Action */}
           {onOpenFile && (
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/30 cursor-pointer transition-all hover:scale-105 active:scale-95 shrink-0">
-              <FolderOpen className="w-4 h-4" />
-              <span className="hidden sm:inline">Open Any File</span>
-              <span className="sm:hidden text-xs">Open</span>
+            <>
               <input
+                ref={headerFileRef}
                 type="file"
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) {
@@ -88,7 +100,15 @@ export const Header: React.FC<HeaderProps> = ({
                 }}
                 className="hidden"
               />
-            </label>
+              <button
+                onClick={handleHeaderOpenFile}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/30 cursor-pointer transition-all hover:scale-105 active:scale-95 shrink-0"
+              >
+                <FolderOpen className="w-4 h-4" />
+                <span className="hidden sm:inline">Open Any File</span>
+                <span className="sm:hidden text-xs">Open</span>
+              </button>
+            </>
           )}
           
           {/* Mobile Search Button */}

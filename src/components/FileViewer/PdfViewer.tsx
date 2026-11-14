@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCw, Download, Printer,
-  FileEdit, Minimize2, PenTool, Scissors, ScanText, Loader2
+  FileEdit, Minimize2, Maximize2, PenTool, Scissors, ScanText, Loader2
 } from 'lucide-react';
 import { pdfjsLib } from '../../utils/pdfjs';
 
@@ -12,18 +12,46 @@ interface PdfViewerProps {
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWithTool }) => {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [pageNum, setPageNum] = useState<number>(1);
   const [numPages, setNumPages] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.2);
+  const [scale, setScale] = useState<number>(1.0);
   const [rotation, setRotation] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<any>(null);
+
+  // Sync Esc key exit via Fullscreen API event listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === rootRef.current);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (rootRef.current?.requestFullscreen) {
+          await rootRef.current.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn('Fullscreen request failed:', e);
+    }
+  }, []);
 
   // Load PDF document
   useEffect(() => {
@@ -40,7 +68,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
         setNumPages(doc.numPages);
         setPageNum(1);
 
-        // Generate thumbnails asynchronously for first 20 pages
+        // Generate thumbnails asynchronously for first 25 pages
         const thumbs: string[] = [];
         const maxThumbs = Math.min(doc.numPages, 25);
         for (let i = 1; i <= maxThumbs; i++) {
@@ -155,10 +183,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
     }
   };
 
+  // Zoom steps (Issue 3: supporting 50%, 100%, 140%, 200%)
+  const zoomSteps = [0.5, 0.75, 1.0, 1.2, 1.4, 1.6, 2.0];
+  const handleZoomIn = () => {
+    setScale((curr) => {
+      const next = zoomSteps.find((s) => s > curr + 0.05);
+      return next !== undefined ? next : Math.min(3.0, Number((curr + 0.2).toFixed(1)));
+    });
+  };
+  const handleZoomOut = () => {
+    setScale((curr) => {
+      const prev = [...zoomSteps].reverse().find((s) => s < curr - 0.05);
+      return prev !== undefined ? prev : Math.max(0.4, Number((curr - 0.2).toFixed(1)));
+    });
+  };
+
   return (
-    <div className="flex flex-col h-full bg-slate-900/90 text-white rounded-2xl overflow-hidden border border-slate-700/60 shadow-2xl backdrop-blur-md">
+    <div
+      ref={rootRef}
+      className={`flex flex-col h-full bg-slate-900/90 text-white rounded-2xl overflow-hidden border border-slate-700/60 shadow-2xl backdrop-blur-md relative ${
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none w-screen h-screen' : ''
+      }`}
+    >
       {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-950/80 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-950/80 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2">
           {/* Thumbnails Toggle */}
           <button
@@ -200,18 +248,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-800/90 rounded-xl p-1 border border-slate-700/80">
             <button
-              onClick={() => setScale((s) => Math.max(0.5, s - 0.2))}
-              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200"
+              onClick={handleZoomOut}
+              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200 transition-colors"
               title="Zoom Out"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
-            <span className="px-2 text-xs font-semibold text-slate-300 min-w-12 text-center">
+            <span className="px-2 text-xs font-mono font-semibold text-slate-300 min-w-12 text-center">
               {Math.round(scale * 100)}%
             </span>
             <button
-              onClick={() => setScale((s) => Math.min(3.0, s + 0.2))}
-              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200"
+              onClick={handleZoomIn}
+              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-200 transition-colors"
               title="Zoom In"
             >
               <ZoomIn className="w-4 h-4" />
@@ -241,12 +289,35 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
           >
             <Download className="w-4 h-4" /> Download
           </button>
+
+          {/* Fullscreen Button - Placed inline to the side so it never overlaps other controls */}
+          <button
+            onClick={toggleFullscreen}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all shrink-0 ${
+              isFullscreen
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30 shadow-lg shadow-amber-500/10'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+            }`}
+            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Fullscreen'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-xs font-semibold">Exit Fullscreen (Esc)</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span className="text-xs font-semibold hidden sm:inline">Fullscreen</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
       {/* PDFCraft Quick Action Bar - Instant Hand-off to Editing Tools */}
       {onOpenWithTool && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-950/40 border-b border-indigo-900/40 overflow-x-auto text-xs scrollbar-none">
+        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-950/40 border-b border-indigo-900/40 overflow-x-auto text-xs scrollbar-none shrink-0">
           <span className="text-indigo-300 font-semibold uppercase tracking-wider shrink-0 text-[11px]">
             PDFCraft Tools:
           </span>
@@ -284,7 +355,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
       )}
 
       {/* Main Viewport */}
-      <div className="flex-1 flex overflow-hidden min-h-[550px] relative">
+      <div className="flex-1 flex overflow-hidden min-h-[500px] relative">
         {/* Thumbnails Sidebar */}
         {showThumbnails && (
           <div className="w-36 sm:w-44 bg-slate-950/70 border-r border-slate-800 p-3 overflow-y-auto space-y-3 shrink-0 scrollbar-thin">
@@ -320,21 +391,23 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ file, fileName, onOpenWith
           </div>
         )}
 
-        {/* Canvas Display */}
-        <div className="flex-1 overflow-auto p-4 sm:p-8 flex items-center justify-center bg-slate-950/40">
+        {/* Canvas Display - Fixed height overflow:auto with m-auto centering without clipping (Issue 3) */}
+        <div className="flex-1 overflow-auto p-4 sm:p-8 bg-slate-950/40 relative">
           {loading ? (
-            <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-20">
+            <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-20 min-h-full">
               <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
               <span className="text-sm font-medium">Opening PDF Document...</span>
             </div>
           ) : error ? (
-            <div className="p-6 max-w-md bg-red-950/50 border border-red-800/80 rounded-2xl text-red-200 text-center">
+            <div className="p-6 max-w-md bg-red-950/50 border border-red-800/80 rounded-2xl text-red-200 text-center m-auto">
               <p className="font-bold mb-1">Failed to Open PDF</p>
               <p className="text-sm text-red-300">{error}</p>
             </div>
           ) : (
-            <div className="shadow-2xl rounded-xl overflow-hidden border border-slate-700/50 bg-white transition-transform">
-              <canvas ref={canvasRef} className="block max-w-none" />
+            <div className="min-w-full min-h-full flex p-2 m-auto w-max h-max">
+              <div className="shadow-2xl rounded-xl overflow-hidden border border-slate-700/50 bg-white m-auto">
+                <canvas ref={canvasRef} className="block max-w-none" />
+              </div>
             </div>
           )}
         </div>
