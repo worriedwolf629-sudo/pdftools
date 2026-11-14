@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, degrees, StandardFonts } from '@cantoo/pdf-lib';
+import { PDFDocument, rgb, degrees, StandardFonts, PDFName } from '@cantoo/pdf-lib';
 import type { PDFPage, PDFFont } from '@cantoo/pdf-lib';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import JSZip from 'jszip';
@@ -296,12 +296,14 @@ const COMPRESS_SETTINGS: Record<CompressPreset, { dpi: number; quality: number }
   high: { dpi: 72, quality: 0.5 }
 };
 
+import { padPdfToTargetSize } from './fileSizeTarget';
+
 export interface CompressResult {
   pdfBytes: Uint8Array;
   originalSize: number;
   newSize: number;
-  /** 'optimized' = lossless re-pack, 'rasterized' = pages re-encoded as JPEG, 'unchanged' = nothing smaller found */
-  method: 'optimized' | 'rasterized' | 'unchanged';
+  /** 'optimized' = lossless re-pack, 'rasterized' = pages re-encoded as JPEG, 'enlarged' = padded to target size, 'unchanged' = nothing smaller found */
+  method: 'optimized' | 'rasterized' | 'enlarged' | 'unchanged';
 }
 
 export const compressPDF = async (
@@ -349,6 +351,113 @@ export const compressPDF = async (
     if (raster.byteLength < best.bytes.byteLength * 0.92) best = { bytes: raster, method: 'rasterized' };
   } finally {
     void pdfjsDoc.loadingTask.destroy();
+  }
+
+  onProgress?.(100, 'Done');
+  return { pdfBytes: best.bytes, originalSize, newSize: best.bytes.byteLength, method: best.method };
+};
+
+export const enlargePdfToTargetSize = async (
+  file: File | Blob,
+  targetBytes: number,
+  onProgress?: Progress
+): Promise<CompressResult> => {
+  onProgress?.(15, 'Reading PDF document');
+  const buffer = await file.arrayBuffer();
+  const originalBytes = new Uint8Array(buffer);
+  const originalSize = originalBytes.byteLength;
+
+  if (targetBytes <= originalSize) {
+    return { pdfBytes: originalBytes, originalSize, newSize: originalSize, method: 'unchanged' };
+  }
+
+  onProgress?.(50, 'Enlarging PDF structure to target size');
+  const padded = await padPdfToTargetSize(originalBytes, targetBytes);
+  onProgress?.(100, 'Done');
+  return {
+    pdfBytes: padded,
+    originalSize,
+    newSize: padded.byteLength,
+    method: 'enlarged'
+  };
+};
+
+export const compressPdfToTargetSize = async (
+  file: File | Blob,
+  targetBytes: number,
+  onProgress?: Progress
+): Promise<CompressResult> => {
+  const buffer = await file.arrayBuffer();
+  const originalBytes = new Uint8Array(buffer);
+  const originalSize = originalBytes.byteLength;
+
+  // If user requested target size >= current, enlarge to that target size!
+  if (targetBytes >= originalSize) {
+    return enlargePdfToTargetSize(file, targetBytes, onProgress);
+  }
+
+  // Candidate 1: lossless structure cleanup
+  onProgress?.(10, 'Optimizing PDF structure (lossless)');
+  let best: { bytes: Uint8Array; method: CompressResult['method'] } = { bytes: originalBytes, method: 'unchanged' };
+  try {
+    const doc = await PDFDocument.load(originalBytes);
+    const clean = await PDFDocument.create();
+    const pages = await clean.copyPages(doc, doc.getPageIndices());
+    pages.forEach((p) => clean.addPage(p));
+    const repacked = await clean.save({ useObjectStreams: true });
+    if (repacked.byteLength <= targetBytes) {
+      onProgress?.(100, 'Done');
+      return { pdfBytes: repacked, originalSize, newSize: repacked.byteLength, method: 'optimized' };
+    }
+    if (repacked.byteLength < best.bytes.byteLength) {
+      best = { bytes: repacked, method: 'optimized' };
+    }
+  } catch (e) {
+    if (/encrypted|password/i.test((e as Error).message)) throw e;
+  }
+
+  // Candidate 2: Adaptive raster downsample to hit target bytes
+  const profiles = [
+    { dpi: 150, quality: 0.82 },
+    { dpi: 120, quality: 0.70 },
+    { dpi: 96, quality: 0.55 },
+    { dpi: 72, quality: 0.40 },
+    { dpi: 50, quality: 0.25 }
+  ];
+
+  const pdfjsDoc = await openPdfjs(file);
+  try {
+    for (let pIdx = 0; pIdx < profiles.length; pIdx++) {
+      const { dpi, quality } = profiles[pIdx];
+      const scale = dpi / 72;
+      onProgress?.(20 + pIdx * 15, `Testing compression profile (${dpi} DPI, ${Math.round(quality * 100)}% quality)`);
+
+      const out = await PDFDocument.create();
+      for (let i = 1; i <= pdfjsDoc.numPages; i++) {
+        const page = await pdfjsDoc.getPage(i);
+        const canvas = await renderPageToCanvas(page, scale);
+        const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+        const img = await out.embedJpg(await blob.arrayBuffer());
+        const pt = page.getViewport({ scale: 1 });
+        const p = out.addPage([pt.width, pt.height]);
+        p.drawImage(img, { x: 0, y: 0, width: pt.width, height: pt.height });
+        page.cleanup();
+      }
+      const raster = await out.save({ useObjectStreams: true });
+      if (raster.byteLength < best.bytes.byteLength) {
+        best = { bytes: raster, method: 'rasterized' };
+      }
+      if (raster.byteLength <= targetBytes) {
+        break;
+      }
+    }
+  } finally {
+    void pdfjsDoc.loadingTask.destroy();
+  }
+
+  // Compression must NEVER return a file larger than original input
+  if (best.bytes.byteLength > originalSize) {
+    best = { bytes: originalBytes, method: 'unchanged' };
   }
 
   onProgress?.(100, 'Done');
@@ -539,6 +648,52 @@ export const extractPagesPDF = async (file: File, pagesSpec: string): Promise<Ui
   const pages = await out.copyPages(src, pageNums.map((p) => p - 1));
   pages.forEach((p) => out.addPage(p));
   return out.save();
+};
+
+export interface ResizePdfOptions {
+  mode: 'scale' | 'paper' | 'file-size';
+  scaleFactor?: number;
+  paperSize?: 'A4' | 'Letter' | 'Legal' | 'A3' | 'Tabloid';
+  targetBytes?: number;
+}
+
+export const resizePDF = async (
+  file: File | Blob,
+  options: ResizePdfOptions
+): Promise<Uint8Array> => {
+  if (options.mode === 'file-size' && options.targetBytes) {
+    const res = await compressPdfToTargetSize(file, options.targetBytes);
+    return res.pdfBytes;
+  }
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await PDFDocument.load(buffer);
+  const pages = pdf.getPages();
+
+  for (const page of pages) {
+    if (options.mode === 'scale' && options.scaleFactor) {
+      const sf = options.scaleFactor;
+      page.scale(sf, sf);
+    } else if (options.mode === 'paper' && options.paperSize) {
+      let w = 595.28;
+      let h = 841.89; // A4
+      if (options.paperSize === 'Letter') {
+        w = 612;
+        h = 792;
+      } else if (options.paperSize === 'Legal') {
+        w = 612;
+        h = 1008;
+      } else if (options.paperSize === 'A3') {
+        w = 841.89;
+        h = 1190.55;
+      } else if (options.paperSize === 'Tabloid') {
+        w = 792;
+        h = 1224;
+      }
+      page.setSize(w, h);
+    }
+  }
+  return pdf.save();
 };
 
 /* ================================================================== */
@@ -1220,5 +1375,393 @@ export const comparePDFs = async (a: File, b: File, onProgress?: Progress): Prom
     added: ops.filter((o) => o.type === 'add').length,
     removed: ops.filter((o) => o.type === 'del').length,
     unchanged: ops.filter((o) => o.type === 'same').length
+  };
+};
+
+/* ================================================================== */
+/* 24. Combine Pages (N-up: multiple pages per sheet)                   */
+/* ================================================================== */
+
+export type NUpPagesOption = 2 | 4 | 6 | 8 | 9 | 16 | 'custom';
+export type NUpReadingOrder = 'left-to-right' | 'top-to-bottom';
+export type NUpSheetSize = 'a4' | 'letter' | 'same-as-first';
+export type NUpOrientation = 'auto' | 'portrait' | 'landscape';
+
+export interface NUpConfig {
+  pagesPerSheet: NUpPagesOption;
+  customRows?: number;
+  customCols?: number;
+  layout2Up?: 'horizontal' | 'vertical';
+  layout6Up?: '2x3' | '3x2';
+  layout8Up?: '2x4' | '4x2';
+  readingOrder?: NUpReadingOrder;
+  sheetSize?: NUpSheetSize;
+  orientation?: NUpOrientation;
+  marginMm?: number;
+  gapMm?: number;
+  drawBorder?: boolean;
+}
+
+export const resolveNUpGrid = (config: NUpConfig): { rows: number; cols: number; nPerSheet: number } => {
+  let rows = 2;
+  let cols = 2;
+
+  switch (config.pagesPerSheet) {
+    case 2:
+      if (config.layout2Up === 'vertical') {
+        rows = 2;
+        cols = 1;
+      } else {
+        rows = 1;
+        cols = 2;
+      }
+      break;
+    case 4:
+      rows = 2;
+      cols = 2;
+      break;
+    case 6:
+      if (config.layout6Up === '3x2') {
+        rows = 3;
+        cols = 2;
+      } else {
+        rows = 2;
+        cols = 3;
+      }
+      break;
+    case 8:
+      if (config.layout8Up === '4x2') {
+        rows = 4;
+        cols = 2;
+      } else {
+        rows = 2;
+        cols = 4;
+      }
+      break;
+    case 9:
+      rows = 3;
+      cols = 3;
+      break;
+    case 16:
+      rows = 4;
+      cols = 4;
+      break;
+    case 'custom':
+      rows = Math.max(1, Math.min(10, config.customRows || 2));
+      cols = Math.max(1, Math.min(10, config.customCols || 2));
+      break;
+    default:
+      rows = 2;
+      cols = 2;
+  }
+
+  return { rows, cols, nPerSheet: rows * cols };
+};
+
+export const drawEmbeddedPageInBox = (
+  sheet: any,
+  emb: any,
+  origRot: number,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  drawBorder: boolean
+) => {
+  const rot = ((origRot % 360) + 360) % 360;
+  const isSideways = rot === 90 || rot === 270;
+  const visualW = isSideways ? emb.height : emb.width;
+  const visualH = isSideways ? emb.width : emb.height;
+
+  const scale = Math.min(boxW / visualW, boxH / visualH);
+  const scaledW = visualW * scale;
+  const scaledH = visualH * scale;
+
+  const originX = boxX + (boxW - scaledW) / 2;
+  const originY = boxY + (boxH - scaledH) / 2;
+
+  const rawScaledW = emb.width * scale;
+  const rawScaledH = emb.height * scale;
+
+  if (rot === 0) {
+    sheet.drawPage(emb, { x: originX, y: originY, width: rawScaledW, height: rawScaledH });
+  } else if (rot === 90) {
+    sheet.drawPage(emb, {
+      x: originX,
+      y: originY + scaledH,
+      width: rawScaledW,
+      height: rawScaledH,
+      rotate: degrees(-90)
+    });
+  } else if (rot === 180) {
+    sheet.drawPage(emb, {
+      x: originX + scaledW,
+      y: originY + scaledH,
+      width: rawScaledW,
+      height: rawScaledH,
+      rotate: degrees(-180)
+    });
+  } else if (rot === 270) {
+    sheet.drawPage(emb, {
+      x: originX + scaledW,
+      y: originY,
+      width: rawScaledW,
+      height: rawScaledH,
+      rotate: degrees(-270)
+    });
+  }
+
+  if (drawBorder) {
+    sheet.drawRectangle({
+      x: originX,
+      y: originY,
+      width: scaledW,
+      height: scaledH,
+      borderWidth: 0.5,
+      borderColor: rgb(0.55, 0.55, 0.55)
+    });
+  }
+
+  return { x: originX, y: originY, width: scaledW, height: scaledH };
+};
+
+export const resolveSheetDimensions = (
+  sheetSize: NUpSheetSize = 'a4',
+  orientation: NUpOrientation = 'auto',
+  firstPageDim: { width: number; height: number },
+  avgPageDim: { width: number; height: number },
+  rows: number,
+  cols: number,
+  marginPt: number,
+  gapPt: number
+): { width: number; height: number } => {
+  let baseW = 595.28;
+  let baseH = 841.89;
+
+  if (sheetSize === 'letter') {
+    baseW = 612;
+    baseH = 792;
+  } else if (sheetSize === 'same-as-first') {
+    baseW = firstPageDim.width || 595.28;
+    baseH = firstPageDim.height || 841.89;
+  }
+
+  const minDim = Math.min(baseW, baseH);
+  const maxDim = Math.max(baseW, baseH);
+
+  if (orientation === 'portrait') {
+    return { width: minDim, height: maxDim };
+  }
+  if (orientation === 'landscape') {
+    return { width: maxDim, height: minDim };
+  }
+
+  // Auto best fit
+  const calcScale = (w: number, h: number) => {
+    const availW = w - 2 * marginPt - (cols - 1) * gapPt;
+    const availH = h - 2 * marginPt - (rows - 1) * gapPt;
+    if (availW <= 0 || availH <= 0) return 0;
+    const cW = availW / cols;
+    const cH = availH / rows;
+    return Math.min(cW / (avgPageDim.width || 1), cH / (avgPageDim.height || 1));
+  };
+
+  const scalePortrait = calcScale(minDim, maxDim);
+  const scaleLandscape = calcScale(maxDim, minDim);
+
+  if (scaleLandscape > scalePortrait) {
+    return { width: maxDim, height: minDim };
+  }
+  return { width: minDim, height: maxDim };
+};
+
+export const combinePagesNUp = async (
+  file: File | Blob,
+  config: NUpConfig,
+  onProgress?: Progress
+): Promise<{ pdfBytes: Uint8Array; totalSheets: number; totalPages: number; nPerSheet: number }> => {
+  onProgress?.(5, 'Loading PDF document');
+  const buffer = await file.arrayBuffer();
+
+  let srcDoc: any;
+  try {
+    srcDoc = await PDFDocument.load(buffer, { ignoreEncryption: false });
+  } catch (err: any) {
+    if (/encrypted|password/i.test(err?.message || '')) {
+      throw new Error('This PDF is password-protected. Please unlock it with the Unlock PDF tool first.');
+    }
+    throw new Error('Unable to read this PDF document. The file may be corrupted.');
+  }
+
+  const totalPages = srcDoc.getPageCount();
+  if (totalPages === 0) {
+    throw new Error('This PDF has no pages.');
+  }
+
+  const { rows, cols, nPerSheet } = resolveNUpGrid(config);
+  const totalSheets = Math.ceil(totalPages / nPerSheet);
+
+  onProgress?.(15, 'Preparing pages for embedding');
+  // Guard against blank pages with missing Contents stream
+  for (const p of srcDoc.getPages()) {
+    if (!p.node.Contents()) {
+      const stream = srcDoc.context.stream('');
+      const ref = srcDoc.context.register(stream);
+      p.node.set(PDFName.of('Contents'), ref);
+    }
+  }
+
+  const outDoc = await PDFDocument.create();
+  const pageIndices = Array.from({ length: totalPages }, (_, i) => i);
+  const embedded = await outDoc.embedPdf(srcDoc, pageIndices);
+
+  const marginPt = (config.marginMm ?? 10) * 2.83465;
+  const gapPt = (config.gapMm ?? 4) * 2.83465;
+
+  const firstP = srcDoc.getPages()[0];
+  const firstDim = { width: firstP.getWidth(), height: firstP.getHeight() };
+  let sumW = 0, sumH = 0;
+  for (const p of srcDoc.getPages()) {
+    sumW += p.getWidth();
+    sumH += p.getHeight();
+  }
+  const avgDim = { width: sumW / totalPages, height: sumH / totalPages };
+
+  const { width: sheetW, height: sheetH } = resolveSheetDimensions(
+    config.sheetSize,
+    config.orientation,
+    firstDim,
+    avgDim,
+    rows,
+    cols,
+    marginPt,
+    gapPt
+  );
+
+  const availW = sheetW - 2 * marginPt - (cols - 1) * gapPt;
+  const availH = sheetH - 2 * marginPt - (rows - 1) * gapPt;
+  const cellW = availW / cols;
+  const cellH = availH / rows;
+
+  for (let s = 0; s < totalSheets; s++) {
+    onProgress?.(
+      20 + Math.round(((s + 1) / totalSheets) * 75),
+      `Assembling sheet ${s + 1} of ${totalSheets}`
+    );
+    await tick();
+
+    const sheet = outDoc.addPage([sheetW, sheetH]);
+
+    for (let k = 0; k < nPerSheet; k++) {
+      const pIdx = s * nPerSheet + k;
+      if (pIdx >= totalPages) break;
+
+      const emb = embedded[pIdx];
+      const origRot = srcDoc.getPages()[pIdx].getRotation().angle;
+
+      let r = Math.floor(k / cols);
+      let c = k % cols;
+      if (config.readingOrder === 'top-to-bottom') {
+        c = Math.floor(k / rows);
+        r = k % rows;
+      }
+
+      const cellLeftX = marginPt + c * (cellW + gapPt);
+      const cellTopY = sheetH - marginPt - r * (cellH + gapPt);
+      const cellBottomY = cellTopY - cellH;
+
+      drawEmbeddedPageInBox(sheet, emb, origRot, cellLeftX, cellBottomY, cellW, cellH, !!config.drawBorder);
+    }
+  }
+
+  onProgress?.(98, 'Saving N-up PDF');
+  await tick();
+  const pdfBytes = await outDoc.save();
+  onProgress?.(100, 'Done');
+
+  return { pdfBytes, totalSheets, totalPages, nPerSheet };
+};
+
+export const previewNUpFirstSheet = async (
+  file: File | Blob,
+  config: NUpConfig
+): Promise<{ blob: Blob; totalPages: number; totalSheets: number; nPerSheet: number }> => {
+  const buffer = await file.arrayBuffer();
+  let srcDoc: any;
+  try {
+    srcDoc = await PDFDocument.load(buffer, { ignoreEncryption: false });
+  } catch (err: any) {
+    if (/encrypted|password/i.test(err?.message || '')) {
+      throw new Error('This PDF is password-protected.');
+    }
+    throw new Error('Unable to read PDF.');
+  }
+
+  const totalPages = srcDoc.getPageCount();
+  const { rows, cols, nPerSheet } = resolveNUpGrid(config);
+  const totalSheets = Math.ceil(totalPages / nPerSheet);
+
+  const takePages = Math.min(totalPages, nPerSheet);
+  const pageIndices = Array.from({ length: takePages }, (_, i) => i);
+
+  for (const idx of pageIndices) {
+    const p = srcDoc.getPages()[idx];
+    if (!p.node.Contents()) {
+      const s = srcDoc.context.stream('');
+      const ref = srcDoc.context.register(s);
+      p.node.set(PDFName.of('Contents'), ref);
+    }
+  }
+
+  const outDoc = await PDFDocument.create();
+  const embedded = await outDoc.embedPdf(srcDoc, pageIndices);
+
+  const marginPt = (config.marginMm ?? 10) * 2.83465;
+  const gapPt = (config.gapMm ?? 4) * 2.83465;
+
+  const firstP = srcDoc.getPages()[0];
+  const firstDim = { width: firstP.getWidth(), height: firstP.getHeight() };
+
+  const { width: sheetW, height: sheetH } = resolveSheetDimensions(
+    config.sheetSize,
+    config.orientation,
+    firstDim,
+    firstDim,
+    rows,
+    cols,
+    marginPt,
+    gapPt
+  );
+
+  const sheet = outDoc.addPage([sheetW, sheetH]);
+  const availW = sheetW - 2 * marginPt - (cols - 1) * gapPt;
+  const availH = sheetH - 2 * marginPt - (rows - 1) * gapPt;
+  const cellW = availW / cols;
+  const cellH = availH / rows;
+
+  for (let k = 0; k < takePages; k++) {
+    const emb = embedded[k];
+    const origRot = srcDoc.getPages()[k].getRotation().angle;
+
+    let r = Math.floor(k / cols);
+    let c = k % cols;
+    if (config.readingOrder === 'top-to-bottom') {
+      c = Math.floor(k / rows);
+      r = k % rows;
+    }
+
+    const cellLeftX = marginPt + c * (cellW + gapPt);
+    const cellTopY = sheetH - marginPt - r * (cellH + gapPt);
+    const cellBottomY = cellTopY - cellH;
+
+    drawEmbeddedPageInBox(sheet, emb, origRot, cellLeftX, cellBottomY, cellW, cellH, !!config.drawBorder);
+  }
+
+  const pdfBytes = await outDoc.save();
+  return {
+    blob: new Blob([pdfBytes as any], { type: 'application/pdf' }),
+    totalPages,
+    totalSheets,
+    nPerSheet
   };
 };

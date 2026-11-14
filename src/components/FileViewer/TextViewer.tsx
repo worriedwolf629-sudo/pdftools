@@ -1,9 +1,18 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  FileCode, Download, Copy, Check, Search, WrapText, Eye, Code, Loader2
+  FileCode, Download, Copy, Check, Search, WrapText, Eye, Code, Loader2,
+  FileSpreadsheet, ArrowRightLeft
 } from 'lucide-react';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+import {
+  parseStructuredData,
+  convertToCsv,
+  convertToYaml,
+  convertToJson,
+  convertToXml,
+  convertDataToPdfReport
+} from '../../utils/dataConverters';
 
 interface TextViewerProps {
   file: File | Blob;
@@ -136,6 +145,74 @@ export const TextViewer: React.FC<TextViewerProps> = ({
   const wordCount = useMemo(() => (content.trim() ? content.trim().split(/\s+/).length : 0), [content]);
   const charCount = content.length;
 
+  const isStructuredData = useMemo(() => {
+    return ['json', 'yaml', 'yml', 'csv', 'tsv', 'xml'].includes(extension) || isJson;
+  }, [extension, isJson]);
+
+  const [converting, setConverting] = useState<boolean>(false);
+
+  const handleConvertData = (targetFormat: 'csv' | 'json' | 'yaml' | 'xml') => {
+    try {
+      setConverting(true);
+      const parsed = parseStructuredData(content, extension);
+      let output = '';
+      let mime = 'text/plain';
+      const outExt = targetFormat;
+
+      switch (targetFormat) {
+        case 'csv':
+          output = convertToCsv(parsed);
+          mime = 'text/csv';
+          break;
+        case 'json':
+          output = convertToJson(parsed);
+          mime = 'application/json';
+          break;
+        case 'yaml':
+          output = convertToYaml(parsed);
+          mime = 'text/yaml';
+          break;
+        case 'xml':
+          output = convertToXml(parsed);
+          mime = 'application/xml';
+          break;
+      }
+
+      const blob = new Blob([output], { type: `${mime};charset=utf-8` });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName.replace(/\.[^/.]+$/, '') + `.${outExt}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Data conversion error:', e);
+      alert('Data conversion failed: ' + (e?.message || e));
+    } finally {
+      setConverting(false);
+    }
+  };
+
+  const handleExportPdfReport = async () => {
+    try {
+      setConverting(true);
+      const parsed = parseStructuredData(content, extension);
+      const pdfBytes = await convertDataToPdfReport(parsed, fileName);
+      const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName.replace(/\.[^/.]+$/, '') + '_report.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('PDF report conversion error:', e);
+      alert('Failed to generate PDF report: ' + (e?.message || e));
+    } finally {
+      setConverting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-900/90 text-white rounded-2xl overflow-hidden border border-slate-700/60 shadow-2xl backdrop-blur-md">
       {/* Top Header */}
@@ -224,6 +301,54 @@ export const TextViewer: React.FC<TextViewerProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Structured Data Quick Converter Bar (Feature 3) */}
+      {isStructuredData && (
+        <div className="flex items-center justify-between gap-2 px-6 py-2 bg-cyan-950/40 border-b border-cyan-900/40 overflow-x-auto text-xs shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-cyan-300 font-semibold uppercase tracking-wider text-[11px] mr-1 flex items-center gap-1">
+              <ArrowRightLeft className="w-3.5 h-3.5" /> Convert To:
+            </span>
+            <button
+              onClick={() => handleConvertData('json')}
+              disabled={converting || extension === 'json'}
+              className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 hover:text-white border border-slate-700/60 transition-all font-mono"
+            >
+              JSON
+            </button>
+            <button
+              onClick={() => handleConvertData('csv')}
+              disabled={converting || extension === 'csv'}
+              className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 hover:text-white border border-slate-700/60 transition-all font-mono"
+            >
+              CSV
+            </button>
+            <button
+              onClick={() => handleConvertData('yaml')}
+              disabled={converting || extension === 'yaml' || extension === 'yml'}
+              className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 hover:text-white border border-slate-700/60 transition-all font-mono"
+            >
+              YAML
+            </button>
+            <button
+              onClick={() => handleConvertData('xml')}
+              disabled={converting || extension === 'xml'}
+              className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-cyan-600 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 hover:text-white border border-slate-700/60 transition-all font-mono"
+            >
+              XML
+            </button>
+          </div>
+
+          <button
+            onClick={handleExportPdfReport}
+            disabled={converting}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition-all shrink-0 ml-auto"
+          >
+            {converting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+            Export PDF Table Report
+          </button>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-950/70">

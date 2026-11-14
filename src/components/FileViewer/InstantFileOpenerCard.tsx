@@ -62,7 +62,7 @@ export const InstantFileOpenerCard: React.FC<InstantFileOpenerCardProps> = ({ on
           </h2>
 
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Tap or drop any <strong className="text-white">PDF, ZIP, RAR, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Images</strong> or <strong className="text-white">Code</strong> file. Opens in milliseconds with zero server upload.
+            Tap or drop any <strong className="text-white">PDF, ZIP, RAR, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Images</strong> or <strong className="text-white">Code</strong> file. Includes built-in <strong className="text-emerald-400">Image Compressor</strong>, <strong className="text-purple-400">Image Enlarger (up to 400%)</strong>, and <strong className="text-indigo-400">PDF Page Resizer</strong>.
           </p>
 
           {/* Formats Pills */}

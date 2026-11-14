@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Download, Loader2, AlertCircle, Copy, Sliders, Sparkles, RotateCcw, Check, Undo2, Trash2,
+  Loader2, AlertCircle, Copy, Sliders, Sparkles, Check, Undo2, Trash2,
   Type, Pencil, Eraser, Highlighter, Square, FileUp, Plus, Minus
 } from 'lucide-react';
 import JSZip from 'jszip';
@@ -11,19 +11,23 @@ import { PagePicker } from './PagePicker';
 import { SignaturePad } from './SignaturePad';
 import { Field, Segmented, Toggle, ProgressBar, SuccessBadge, inputCls } from './ui';
 import {
-  mergePDFs, splitPDF, compressPDF, imagesToPDF, pdfToImages, zipImages, rotatePDF, deletePagesPDF,
+  mergePDFs, splitPDF, compressPDF, compressPdfToTargetSize, imagesToPDF, pdfToImages, zipImages, rotatePDF, deletePagesPDF,
   extractPagesPDF, addWatermarkPDF, addPageNumbersPDF, protectPDF, unlockPDF, extractTextPDF, extractImagesPDF,
   getPDFMetadata, updatePDFMetadata, getPDFInfo, pdfInfoToText, ocrPDF, signPDF, typedSignatureToPng, editPDF,
-  textToPDF, markdownToPDF, comparePDFs, downloadBlob, friendlyError, formatBytes, stripPdfExt,
-  needsUnicodeRendering
+  textToPDF, markdownToPDF, comparePDFs, friendlyError, formatBytes, stripPdfExt,
+  needsUnicodeRendering, combinePagesNUp, previewNUpFirstSheet, renderPdfPage, resolveNUpGrid
 } from '../utils/pdfEngine';
+import { parseSizeToBytes } from '../utils/fileSizeTarget';
+import { ResultVerificationCard } from './ResultVerificationCard';
 import type {
-  Annotation, CompareResult, CompressPreset, ImageFormat, NumberPosition, PdfInfo, PdfMetadata, Progress
+  Annotation, CompareResult, CompressPreset, ImageFormat, NumberPosition, PdfInfo, PdfMetadata, Progress,
+  NUpPagesOption, NUpReadingOrder, NUpSheetSize, NUpOrientation, NUpConfig
 } from '../utils/pdfEngine';
 
 interface ToolWorkstationProps {
   tool: PDFTool;
   initialFiles?: File[];
+  onOpenFile?: (file: File) => void;
 }
 
 type Result = { blob: Blob; filename: string };
@@ -39,7 +43,7 @@ const MULTI_TOOLS = ['merge-pdf', 'jpg-to-pdf', 'compare-pdf'];
 const TEXT_TOOLS = ['text-to-pdf', 'markdown-to-pdf'];
 const needsFile = (id: string) => !TEXT_TOOLS.includes(id);
 
-export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialFiles }) => {
+export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialFiles, onOpenFile }) => {
   const id = tool.id;
   const [files, setFiles] = useState<File[]>(initialFiles || []);
   const [busy, setBusy] = useState(false);
@@ -62,6 +66,9 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
   const [splitRange, setSplitRange] = useState('1-2');
   const [splitEveryN, setSplitEveryN] = useState(1);
   const [compressLevel, setCompressLevel] = useState<CompressPreset>('medium');
+  const [compressType, setCompressType] = useState<'target' | 'preset'>('target');
+  const [targetPdfSizeVal, setTargetPdfSizeVal] = useState<number>(200);
+  const [targetPdfSizeUnit, setTargetPdfSizeUnit] = useState<'KB' | 'MB'>('KB');
   const [pageSize, setPageSize] = useState<'fit' | 'a4' | 'letter'>('a4');
   const [orientation, setOrientation] = useState<'auto' | 'portrait' | 'landscape'>('auto');
   const [margin, setMargin] = useState(20);
@@ -85,6 +92,23 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
   const [imgFormat, setImgFormat] = useState<ImageFormat>('jpg');
   const [imgScale, setImgScale] = useState(2);
   const [meta, setMeta] = useState<PdfMetadata>({ title: '', author: '', subject: '', keywords: '', creator: '', producer: '' });
+
+  // combine-pages-nup
+  const [nupPagesPerSheet, setNupPagesPerSheet] = useState<NUpPagesOption>(4);
+  const [nupCustomRows, setNupCustomRows] = useState<number>(2);
+  const [nupCustomCols, setNupCustomCols] = useState<number>(2);
+  const [nupLayout2Up, setNupLayout2Up] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [nupLayout6Up, setNupLayout6Up] = useState<'2x3' | '3x2'>('2x3');
+  const [nupLayout8Up, setNupLayout8Up] = useState<'2x4' | '4x2'>('2x4');
+  const [nupReadingOrder, setNupReadingOrder] = useState<NUpReadingOrder>('left-to-right');
+  const [nupSheetSize, setNupSheetSize] = useState<NUpSheetSize>('a4');
+  const [nupOrientation, setNupOrientation] = useState<NUpOrientation>('auto');
+  const [nupMarginMm, setNupMarginMm] = useState<number>(10);
+  const [nupGapMm, setNupGapMm] = useState<number>(4);
+  const [nupDrawBorder, setNupDrawBorder] = useState<boolean>(true);
+  const [nupPreviewUrl, setNupPreviewUrl] = useState<string | null>(null);
+  const [nupPreviewLoading, setNupPreviewLoading] = useState<boolean>(false);
+  const [nupSummary, setNupSummary] = useState<{ totalPages: number; totalSheets: number; nPerSheet: number } | null>(null);
   const [rawText, setRawText] = useState(
     id === 'markdown-to-pdf'
       ? '# My Document\n\nWrite **Markdown** here.\n\n- Headings, lists and quotes work\n- Long text paginates automatically\n\n> Convert it to a PDF with one click.'
@@ -130,6 +154,84 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
     }).catch(() => undefined);
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [id, sigMode, sigText]);
+
+  // combine-pages-nup live preview of first sheet
+  useEffect(() => {
+    if (id !== 'combine-pages-nup' || files.length === 0) {
+      if (nupPreviewUrl) {
+        URL.revokeObjectURL(nupPreviewUrl);
+        setNupPreviewUrl(null);
+      }
+      setNupSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    let localUrl = '';
+    const config: NUpConfig = {
+      pagesPerSheet: nupPagesPerSheet,
+      customRows: nupCustomRows,
+      customCols: nupCustomCols,
+      layout2Up: nupLayout2Up,
+      layout6Up: nupLayout6Up,
+      layout8Up: nupLayout8Up,
+      readingOrder: nupReadingOrder,
+      sheetSize: nupSheetSize,
+      orientation: nupOrientation,
+      marginMm: nupMarginMm,
+      gapMm: nupGapMm,
+      drawBorder: nupDrawBorder
+    };
+
+    setNupPreviewLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const preview = await previewNUpFirstSheet(files[0], config);
+        if (cancelled) return;
+        setNupSummary({
+          totalPages: preview.totalPages,
+          totalSheets: preview.totalSheets,
+          nPerSheet: preview.nPerSheet
+        });
+
+        const rendered = await renderPdfPage(preview.blob, 1, 480);
+        if (cancelled) return;
+        const blob = await new Promise<Blob | null>((res) => rendered.canvas.toBlob((b: Blob | null) => res(b), 'image/jpeg', 0.85));
+        if (cancelled || !blob) return;
+
+        localUrl = URL.createObjectURL(blob);
+        setNupPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return localUrl;
+        });
+      } catch (e) {
+        // silent preview failure on corrupted/initial read
+      } finally {
+        if (!cancelled) setNupPreviewLoading(false);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (localUrl) URL.revokeObjectURL(localUrl);
+    };
+  }, [
+    id,
+    files,
+    nupPagesPerSheet,
+    nupCustomRows,
+    nupCustomCols,
+    nupLayout2Up,
+    nupLayout6Up,
+    nupLayout8Up,
+    nupReadingOrder,
+    nupSheetSize,
+    nupOrientation,
+    nupMarginMm,
+    nupGapMm,
+    nupDrawBorder
+  ]);
 
   const clearOutputs = () => {
     setError(''); setSuccess(''); setResult(null); setExtractedText(''); setCompare(null);
@@ -209,13 +311,19 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         }
 
         case 'compress-pdf': {
-          const r = await compressPDF(f, compressLevel, onProgress);
+          const targetBytes = parseSizeToBytes(targetPdfSizeVal, targetPdfSizeUnit);
+          const r = compressType === 'target'
+            ? await compressPdfToTargetSize(f, targetBytes, onProgress)
+            : await compressPDF(f, compressLevel, onProgress);
           setCompressStats({ orig: r.originalSize, now: r.newSize, method: r.method });
-          finishPdf(r.pdfBytes, `compressed_${f.name}`,
-            r.method === 'unchanged'
+          const isEnlarged = r.method === 'enlarged';
+          finishPdf(r.pdfBytes, isEnlarged ? `enlarged_${f.name}` : `compressed_${f.name}`,
+            isEnlarged
+              ? `Enlarged PDF file size to ${formatBytes(r.newSize)} (${targetPdfSizeVal} ${targetPdfSizeUnit}) for portal upload requirements.`
+              : r.method === 'unchanged'
               ? 'This PDF is already well optimized — no smaller version was found, so the original is kept.'
               : r.method === 'rasterized'
-                ? 'Compressed. Pages were converted to images, so text is no longer selectable.'
+                ? 'Compressed to fit target size. Pages were optimized as high-clarity images.'
                 : 'Compressed without any quality loss. Text stays selectable.');
           break;
         }
@@ -245,6 +353,30 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         case 'extract-pages':
           finishPdf(await extractPagesPDF(f, pagesSpec), `extracted_${f.name}`, 'Pages extracted into a new PDF.');
           break;
+
+        case 'combine-pages-nup': {
+          const config: NUpConfig = {
+            pagesPerSheet: nupPagesPerSheet,
+            customRows: nupCustomRows,
+            customCols: nupCustomCols,
+            layout2Up: nupLayout2Up,
+            layout6Up: nupLayout6Up,
+            layout8Up: nupLayout8Up,
+            readingOrder: nupReadingOrder,
+            sheetSize: nupSheetSize,
+            orientation: nupOrientation,
+            marginMm: nupMarginMm,
+            gapMm: nupGapMm,
+            drawBorder: nupDrawBorder
+          };
+          const r = await combinePagesNUp(f, config, onProgress);
+          finishPdf(
+            r.pdfBytes,
+            `${base}_${r.nPerSheet}up.pdf`,
+            `Combined ${r.totalPages} pages into ${r.totalSheets} sheets (${r.nPerSheet} pages per sheet).`
+          );
+          break;
+        }
 
         case 'watermark-pdf':
           finishPdf(await addWatermarkPDF(f, wmText, { opacity: wmOpacity, fontSize: wmSize, angle: wmAngle, color: wmColor, pagesSpec: pagesSpec.trim() || 'all' }), `watermarked_${f.name}`, 'Watermark added.');
@@ -292,6 +424,31 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         case 'markdown-to-pdf':
           finishPdf(await markdownToPDF(rawText), 'document.pdf');
           break;
+
+        case 'combine-pages-nup': {
+          const config: NUpConfig = {
+            pagesPerSheet: nupPagesPerSheet,
+            customRows: nupCustomRows,
+            customCols: nupCustomCols,
+            layout2Up: nupLayout2Up,
+            layout6Up: nupLayout6Up,
+            layout8Up: nupLayout8Up,
+            readingOrder: nupReadingOrder,
+            sheetSize: nupSheetSize,
+            orientation: nupOrientation,
+            marginMm: nupMarginMm,
+            gapMm: nupGapMm,
+            drawBorder: nupDrawBorder
+          };
+          const r = await combinePagesNUp(f, config, onProgress);
+          const gridLabel = nupPagesPerSheet === 'custom' ? `${nupCustomRows}x${nupCustomCols}` : `${r.nPerSheet}up`;
+          finishPdf(
+            r.pdfBytes,
+            `${base}_${gridLabel}.pdf`,
+            `Combined ${r.totalPages} pages into ${r.totalSheets} sheets (${r.nPerSheet} pages per sheet).`
+          );
+          break;
+        }
 
         case 'sign-pdf': {
           const sig: Blob | string | null = sigMode === 'draw' ? sigDrawn : sigTyped?.blob ?? null;
@@ -376,15 +533,118 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
 
       case 'compress-pdf':
         return (
-          <div className="space-y-3">
-            <Segmented value={compressLevel} onChange={setCompressLevel} options={[
-              { value: 'high', label: 'Extreme', desc: 'Smallest file' },
-              { value: 'medium', label: 'Recommended', desc: 'Balanced' },
-              { value: 'low', label: 'Light', desc: 'Best quality' }
-            ]} />
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              We first try a lossless clean-up (text stays selectable). Only if that is not enough and image compression saves a lot do we convert pages to images — and we never return a file bigger than the original.
-            </p>
+          <div className="space-y-4">
+            <Field label="Compression / Resize Mode">
+              <Segmented
+                value={compressType}
+                onChange={setCompressType}
+                options={[
+                  { value: 'target', label: 'Target Size (KB / MB)', desc: 'Exact target file size' },
+                  { value: 'preset', label: 'Quality Presets', desc: 'Extreme, Balanced, Light' }
+                ]}
+              />
+            </Field>
+
+            {compressType === 'target' ? (
+              <div className="space-y-3 bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 block">
+                    Quick Target Size Presets:
+                  </label>
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 text-xs font-mono">
+                    {[
+                      { val: 50, unit: 'KB' },
+                      { val: 100, unit: 'KB' },
+                      { val: 200, unit: 'KB' },
+                      { val: 500, unit: 'KB' },
+                      { val: 1, unit: 'MB' },
+                      { val: 2, unit: 'MB' },
+                      { val: 5, unit: 'MB' }
+                    ].map((p) => {
+                      const isSel = targetPdfSizeVal === p.val && targetPdfSizeUnit === p.unit;
+                      return (
+                        <button
+                          key={`${p.val}${p.unit}`}
+                          type="button"
+                          onClick={() => {
+                            setTargetPdfSizeVal(p.val);
+                            setTargetPdfSizeUnit(p.unit as any);
+                          }}
+                          className={`py-1.5 rounded-lg border font-mono transition-all text-center ${
+                            isSel
+                              ? 'bg-indigo-600 text-white font-bold border-indigo-400 shadow-sm'
+                              : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                          }`}
+                        >
+                          {p.val} {p.unit}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 block">
+                    Custom Target PDF Size:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="9999"
+                      value={targetPdfSizeVal}
+                      onChange={(e) => setTargetPdfSizeVal(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                    />
+                    <select
+                      value={targetPdfSizeUnit}
+                      onChange={(e) => setTargetPdfSizeUnit(e.target.value as any)}
+                      className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white text-sm font-bold focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="KB">KB</option>
+                      <option value="MB">MB</option>
+                    </select>
+                  </div>
+                </div>
+
+                {files[0] && (() => {
+                  const curBytes = files[0].size;
+                  const targetBytes = parseSizeToBytes(targetPdfSizeVal, targetPdfSizeUnit);
+                  const isEnlarge = targetBytes > curBytes;
+                  return (
+                    <div
+                      className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
+                        isEnlarge
+                          ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-700 dark:text-purple-300'
+                          : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      <span>
+                        {isEnlarge ? '📈 Enlarge file size to' : '🗜️ Compress file size to'}:
+                      </span>
+                      <span className="font-mono font-bold">
+                        {targetPdfSizeVal} {targetPdfSizeUnit} ({isEnlarge ? `+${formatBytes(targetBytes - curBytes)}` : `-${formatBytes(curBytes - targetBytes)}`})
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Ideal for portals requiring strict file size limits (e.g. under 200 KB) or minimum sizes (e.g. at least 500 KB).
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Segmented value={compressLevel} onChange={setCompressLevel} options={[
+                  { value: 'high', label: 'Extreme', desc: 'Smallest file' },
+                  { value: 'medium', label: 'Recommended', desc: 'Balanced' },
+                  { value: 'low', label: 'Light', desc: 'Best quality' }
+                ]} />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  We first try a lossless clean-up (text stays selectable). Only if that is not enough and image compression saves a lot do we convert pages to images — and we never return a file bigger than the original.
+                </p>
+              </div>
+            )}
           </div>
         );
 
@@ -667,6 +927,217 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
           </div>
         );
 
+      case 'combine-pages-nup': {
+        const gridInfo = resolveNUpGrid({
+          pagesPerSheet: nupPagesPerSheet,
+          customRows: nupCustomRows,
+          customCols: nupCustomCols,
+          layout2Up: nupLayout2Up,
+          layout6Up: nupLayout6Up,
+          layout8Up: nupLayout8Up
+        });
+
+        return (
+          <div className="space-y-6">
+            {/* Live Preview & Summary Card */}
+            {nupSummary && (
+              <div className="p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-base">
+                    {gridInfo.nPerSheet}×
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white text-sm">
+                      {nupSummary.totalPages} pages → {nupSummary.totalSheets} {nupSummary.totalSheets === 1 ? 'sheet' : 'sheets'}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Grid: {gridInfo.rows} rows × {gridInfo.cols} cols ({gridInfo.nPerSheet} per sheet)
+                    </div>
+                  </div>
+                </div>
+                {nupPreviewUrl && (
+                  <div className="relative group shrink-0">
+                    <img
+                      src={nupPreviewUrl}
+                      alt="Sheet 1 Preview"
+                      className="h-28 rounded-lg shadow-md border border-slate-200 dark:border-slate-700 bg-white object-contain"
+                    />
+                    {nupPreviewLoading && (
+                      <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] rounded-lg flex items-center justify-center text-white">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      </div>
+                    )}
+                    <span className="absolute bottom-1 right-1 text-[9px] font-mono bg-slate-900/80 text-white px-1.5 py-0.5 rounded">
+                      Sheet 1 Preview
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 1. Pages Per Sheet */}
+            <Field label="Pages per sheet" hint="How many pages to place on each printed sheet">
+              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 font-mono text-xs">
+                {([2, 4, 6, 8, 9, 16, 'custom'] as const).map((opt) => (
+                  <button
+                    key={String(opt)}
+                    type="button"
+                    onClick={() => setNupPagesPerSheet(opt)}
+                    className={`py-2 px-1 rounded-xl border font-bold transition-all text-center ${
+                      nupPagesPerSheet === opt
+                        ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-indigo-300'
+                    }`}
+                  >
+                    {opt === 'custom' ? 'Custom' : `${opt}-up`}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {/* Sub-layout conditional options */}
+            {nupPagesPerSheet === 2 && (
+              <Field label="2-up Layout">
+                <Segmented
+                  value={nupLayout2Up}
+                  onChange={(v) => setNupLayout2Up(v as any)}
+                  options={[
+                    { value: 'horizontal', label: 'Side by Side (1×2)', desc: 'Left & Right' },
+                    { value: 'vertical', label: 'Stacked (2×1)', desc: 'Top & Bottom' }
+                  ]}
+                />
+              </Field>
+            )}
+
+            {nupPagesPerSheet === 6 && (
+              <Field label="6-up Layout">
+                <Segmented
+                  value={nupLayout6Up}
+                  onChange={(v) => setNupLayout6Up(v as any)}
+                  options={[
+                    { value: '2x3', label: '2 rows × 3 cols', desc: 'Landscape style' },
+                    { value: '3x2', label: '3 rows × 2 cols', desc: 'Portrait style' }
+                  ]}
+                />
+              </Field>
+            )}
+
+            {nupPagesPerSheet === 8 && (
+              <Field label="8-up Layout">
+                <Segmented
+                  value={nupLayout8Up}
+                  onChange={(v) => setNupLayout8Up(v as any)}
+                  options={[
+                    { value: '2x4', label: '2 rows × 4 cols', desc: 'Wide format' },
+                    { value: '4x2', label: '4 rows × 2 cols', desc: 'Tall format' }
+                  ]}
+                />
+              </Field>
+            )}
+
+            {nupPagesPerSheet === 'custom' && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Rows">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={nupCustomRows}
+                    onChange={(e) => setNupCustomRows(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Columns">
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={nupCustomCols}
+                    onChange={(e) => setNupCustomCols(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                    className={inputCls}
+                  />
+                </Field>
+              </div>
+            )}
+
+            {/* Reading Order */}
+            <Field label="Page Ordering Sequence">
+              <Segmented
+                value={nupReadingOrder}
+                onChange={(v) => setNupReadingOrder(v as any)}
+                options={[
+                  { value: 'left-to-right', label: 'Left to Right (Row-first)', desc: '1 2 → 3 4' },
+                  { value: 'top-to-bottom', label: 'Top to Bottom (Col-first)', desc: '1 3 ↓ 2 4' }
+                ]}
+              />
+            </Field>
+
+            {/* Sheet Size & Orientation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Output Sheet Size">
+                <select
+                  value={nupSheetSize}
+                  onChange={(e) => setNupSheetSize(e.target.value as any)}
+                  className={inputCls}
+                >
+                  <option value="a4">A4 (210 × 297 mm)</option>
+                  <option value="letter">US Letter (8.5 × 11 in)</option>
+                  <option value="same-as-first">Same as original PDF page</option>
+                </select>
+              </Field>
+
+              <Field label="Sheet Orientation">
+                <select
+                  value={nupOrientation}
+                  onChange={(e) => setNupOrientation(e.target.value as any)}
+                  className={inputCls}
+                >
+                  <option value="auto">Auto (Best Fit scale maximizer)</option>
+                  <option value="portrait">Portrait</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+              </Field>
+            </div>
+
+            {/* Margins & Gaps */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label={`Sheet Margin: ${nupMarginMm} mm`} hint="Outer padding around each sheet">
+                <input
+                  type="range"
+                  min={0}
+                  max={30}
+                  step={1}
+                  value={nupMarginMm}
+                  onChange={(e) => setNupMarginMm(parseInt(e.target.value) || 0)}
+                  className="w-full accent-indigo-600 cursor-pointer"
+                />
+              </Field>
+
+              <Field label={`Page Gap: ${nupGapMm} mm`} hint="Space between adjacent pages">
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  step={1}
+                  value={nupGapMm}
+                  onChange={(e) => setNupGapMm(parseInt(e.target.value) || 0)}
+                  className="w-full accent-indigo-600 cursor-pointer"
+                />
+              </Field>
+            </div>
+
+            {/* Border toggle */}
+            <div className="pt-1">
+              <Toggle
+                checked={nupDrawBorder}
+                onChange={setNupDrawBorder}
+                label="Draw thin border line around each embedded page"
+              />
+            </div>
+          </div>
+        );
+      }
+
       default:
         return null;
     }
@@ -738,42 +1209,46 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         )}
 
         {busy && <ProgressBar pct={progress.pct} label={progress.label} />}
-        {success && !busy && <SuccessBadge>{success}</SuccessBadge>}
+        {success && !busy && !result && <SuccessBadge>{success}</SuccessBadge>}
 
-        {compressStats && (
-          <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-sm flex items-center justify-between gap-3 flex-wrap animate-pop-in">
-            <div>Original <b>{formatBytes(compressStats.orig)}</b> → <b>{formatBytes(compressStats.now)}</b></div>
-            <div className="font-extrabold px-3 py-1 bg-white dark:bg-slate-900 rounded-lg shadow-sm">
-              Saved {Math.max(0, Math.round((1 - compressStats.now / compressStats.orig) * 100))}%
-            </div>
-          </div>
+        {/* Live Result Verification & Preview Card */}
+        {result && (
+          <ResultVerificationCard
+            result={result}
+            onReset={() => {
+              setResult(null);
+              setSuccess('');
+              setPreviewBlobs([]);
+            }}
+            onOpenInViewer={onOpenFile}
+            compressStats={compressStats}
+            successMessage={success}
+          />
         )}
 
-        {!hideRunButton && (
+        {!hideRunButton && !result && (
           <div className="flex flex-wrap justify-center gap-3 pt-2">
-            {!result ? (
-              <button onClick={handleProcess} disabled={runDisabled} className="btn-primary w-full sm:w-auto px-8 py-3.5 text-base">
-                {busy ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Working…</span></> : <><Sparkles className="w-5 h-5" /><span>{tool.name}</span></>}
-              </button>
-            ) : (
-              <>
-                <button onClick={() => downloadBlob(result.blob, result.filename)} className="btn-primary w-full sm:w-auto px-10 py-4 text-base !bg-none bg-emerald-600 hover:bg-emerald-700 !shadow-emerald-500/30 animate-pop-in">
-                  <Download className="w-5 h-5" /><span className="truncate max-w-[16rem]">Download {result.filename}</span>
-                </button>
-                <button onClick={() => { setResult(null); setSuccess(''); setPreviewBlobs([]); }} className="btn-secondary px-5 py-4 w-full sm:w-auto">
-                  <RotateCcw className="w-4 h-4" /> Adjust &amp; run again
-                </button>
-              </>
-            )}
-          </div>
-        )}
-        {hideRunButton && result && (
-          <div className="text-center">
-            <button onClick={() => downloadBlob(result.blob, result.filename)} className="btn-secondary px-6 py-3"><Download className="w-4 h-4" /> Download report (.txt)</button>
+            <button
+              onClick={handleProcess}
+              disabled={runDisabled}
+              className="btn-primary w-full sm:w-auto px-8 py-3.5 text-base"
+            >
+              {busy ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Working…</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  <span>{tool.name}</span>
+                </>
+              )}
+            </button>
           </div>
         )}
 
-        {previews.length > 0 && (
+        {!result && previews.length > 0 && (
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 animate-fade-in">
             {previews.map((u, i) => (
               <img key={u} src={u} alt={`Page ${i + 1}`} className="rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm w-full h-auto animate-pop-in" style={{ animationDelay: `${i * 50}ms` }} />
@@ -781,7 +1256,7 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
           </div>
         )}
 
-        {extractedText && (
+        {!result && extractedText && (
           <div className="space-y-2 pt-4 border-t border-slate-200 dark:border-slate-800 animate-fade-in">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Extracted text</span>

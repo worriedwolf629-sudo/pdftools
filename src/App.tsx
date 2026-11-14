@@ -188,6 +188,7 @@ export function App() {
                 key={selectedTool.id}
                 tool={selectedTool}
                 initialFiles={toolInitialFiles.length > 0 ? toolInitialFiles : undefined}
+                onOpenFile={(f) => setOpenedFile({ file: f, name: f.name })}
               />
             </Suspense>
             <RelatedTools currentToolId={selectedTool.id} onSelectTool={(slug) => navigateTo(slug)} />
@@ -218,6 +219,7 @@ export function App() {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectTool={(slug) => navigateTo(slug)}
+        onOpenFile={handleFileReceived}
       />
     </div>
   );

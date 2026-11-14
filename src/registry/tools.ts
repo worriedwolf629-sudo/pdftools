@@ -52,9 +52,15 @@ export const TOOLS: PDFTool[] = [
     category: 'file-opener',
     categoryName: 'File Opener & Viewer',
     description: 'Instantly view, inspect, and open any PDF, ZIP, RAR, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), Images, and Code in your browser with 100% privacy.',
-    shortDescription: 'Open PDF, ZIP, RAR, Word, Excel, PPTX, Images & Code instantly',
+    shortDescription: 'Open & view PDF, Office, ZIP, or compress & resize/enlarge images and PDFs',
     iconName: 'FolderOpen',
-    keywords: ['open file', 'file opener', 'file viewer', 'open zip', 'open rar', 'view docx', 'view excel', 'view pptx', 'open pdf', 'view pdf', 'image viewer'],
+    keywords: [
+      'open file', 'file opener', 'file viewer', 'open zip', 'open rar', 'view docx',
+      'view excel', 'view pptx', 'open pdf', 'view pdf', 'image viewer',
+      'compress image', 'image compressor', 'shrink image', 'compress photo', 'reduce image size',
+      'resize image', 'enlarge image', 'image resizer', 'upscale image', 'image scale', 'enlarge photo',
+      'resize pdf', 'enlarge pdf', 'scale pdf', 'pdf scaler', 'enlarge', 'resize'
+    ],
     popular: true,
     relatedToolIds: ['merge-pdf', 'compress-pdf', 'edit-pdf', 'sign-pdf'],
     seo: {
@@ -154,7 +160,10 @@ export const TOOLS: PDFTool[] = [
     description: 'Reduce PDF file size for email sharing and web storage while maintaining maximum visual quality.',
     shortDescription: 'Reduce PDF file size with adjustable compression levels',
     iconName: 'Minimize2',
-    keywords: ['compress pdf', 'reduce pdf size', 'shrink pdf', 'optimize pdf', 'smaller pdf'],
+    keywords: [
+      'compress pdf', 'reduce pdf size', 'shrink pdf', 'optimize pdf', 'smaller pdf',
+      'compress image', 'resize pdf', 'enlarge pdf', 'scale pdf', 'pdf resizer', 'pdf scaler', 'change pdf size', 'enlarge', 'resize', 'scale'
+    ],
     popular: true,
     relatedToolIds: ['merge-pdf', 'pdf-to-jpg', 'pdf-info'],
     seo: {
@@ -762,11 +771,49 @@ export const TOOLS: PDFTool[] = [
         { question: 'Can I upload an .md file directly?', answer: 'Yes, you can paste text or drop an `.md` file into the editor.' }
       ]
     }
+  },
+  {
+    id: 'combine-pages-nup',
+    name: 'Combine Pages (N-up)',
+    slug: 'combine-pages-nup',
+    category: 'organize',
+    categoryName: 'Organize Pages',
+    description: 'Combine multiple PDF pages onto a single sheet (2-up, 4-up, 6-up, 8-up, 9-up, 16-up) for handouts and eco-friendly printing.',
+    shortDescription: 'Place multiple pages onto one sheet (2, 4, 6, 9-up grid)',
+    iconName: 'LayoutGrid',
+    keywords: [
+      'combine pages', 'n-up', 'nup', 'multiple pages per sheet', '2-up', '4-up',
+      '6-up', '8-up', '9-up', '16-up', 'grid pdf', 'handouts', 'print slides',
+      'pages per sheet', 'nup pdf', 'lecture notes', 'eco print'
+    ],
+    popular: true,
+    relatedToolIds: ['merge-pdf', 'split-pdf', 'compress-pdf', 'rotate-pdf'],
+    seo: {
+      title: 'Combine Pages (N-up) Online – Multiple PDF Pages Per Sheet',
+      metaDescription: 'Put multiple PDF pages onto one sheet with 2-up, 4-up, 6-up, or 9-up layouts. Custom margins, borders, and paper sizes with 100% private client-side processing.',
+      h1: 'Combine Multiple PDF Pages onto One Sheet (N-up)',
+      intro: 'Condense documents, prepare lecture handouts, or print multi-page slides onto single sheets. Choose from 2-up, 4-up, 6-up, 9-up, or custom grids with vector-sharp text.',
+      howToSteps: [
+        { step: '1. Select PDF File', text: 'Upload or drag and drop the PDF document you want to arrange.' },
+        { step: '2. Choose Layout', text: 'Select pages per sheet (2, 4, 6, 8, 9, 16) or set custom rows × columns.' },
+        { step: '3. Configure Margins & Spacing', text: 'Adjust sheet size, margins in mm, gaps, reading order, and page borders with live preview.' },
+        { step: '4. Download N-up PDF', text: 'Click "Combine Pages" to instantly download your consolidated PDF.' }
+      ],
+      features: [
+        { title: 'Vector-Sharp Quality', desc: 'Pages are embedded as scalable vector Form XObjects without rasterizing or losing text sharpness.' },
+        { title: 'Custom Grids & Spacing', desc: 'Full control over rows, columns, margins in millimeters, reading order, and page borders.' },
+        { title: '100% Client-Side & Private', desc: 'All processing happens locally on your device with zero server uploads.' }
+      ],
+      faqs: [
+        { question: 'Will my text still be selectable?', answer: 'Yes! PDFCraft embeds the original PDF vector streams so text stays selectable and prints crisply.' },
+        { question: 'Can I print slides 2-up or 4-up?', answer: 'Yes! 2-up side-by-side or 4-up grid is ideal for creating printable lecture notes and presentation handouts.' }
+      ]
+    }
   }
 ];
 
 export const getToolBySlug = (slug: string): PDFTool | undefined => {
-  return TOOLS.find(tool => tool.slug === slug || tool.id === slug);
+  return TOOLS.find(tool => tool.slug === slug || tool.id === slug || (slug === 'nup-pdf' && tool.id === 'combine-pages-nup'));
 };
 
 export const getToolsByCategory = (category: string): PDFTool[] => {

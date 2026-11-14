@@ -5,9 +5,23 @@ import { DocumentViewer } from './DocumentViewer';
 import { ImageViewer } from './ImageViewer';
 import { TextViewer } from './TextViewer';
 import { PresentationViewer } from './PresentationViewer';
+import { SpreadsheetViewer } from './SpreadsheetViewer';
+import { EpubViewer } from './EpubViewer';
 import { UnsupportedView } from './UnsupportedView';
 
-export type ViewerRoute = 'pdf' | 'text' | 'docx' | 'zip' | 'image' | 'pptx' | 'unsupported';
+export type ViewerRoute =
+  | 'pdf'
+  | 'text'
+  | 'docx'
+  | 'zip'
+  | 'image'
+  | 'pptx'
+  | 'spreadsheet'
+  | 'epub'
+  | 'unsupported';
+
+export const SPREADSHEET_EXTENSIONS = new Set(['xlsx', 'xls', 'csv', 'tsv', 'ods']);
+export const ARCHIVE_EXTENSIONS = new Set(['zip', 'cbz', 'cbr', 'tar', 'gz']);
 
 export const CODE_TEXT_EXTENSIONS = new Set([
   'txt', 'text', 'log', 'env', 'ini', 'cfg', 'conf',
@@ -51,7 +65,15 @@ export function getRouteForExtension(fileName: string): { route: ViewerRoute; ex
     return { route: 'pptx', extension };
   }
 
-  if (extension === 'zip') {
+  if (SPREADSHEET_EXTENSIONS.has(extension)) {
+    return { route: 'spreadsheet', extension };
+  }
+
+  if (extension === 'epub') {
+    return { route: 'epub', extension };
+  }
+
+  if (ARCHIVE_EXTENSIONS.has(extension)) {
     return { route: 'zip', extension };
   }
 
@@ -136,6 +158,22 @@ export const FileRouter: React.FC<FileRouterProps> = ({
           fileName={fileName}
           isMarkdown={extension === 'md' || extension === 'markdown'}
           isJson={extension === 'json'}
+        />
+      );
+
+    case 'spreadsheet':
+      return (
+        <SpreadsheetViewer
+          file={file}
+          fileName={fileName}
+        />
+      );
+
+    case 'epub':
+      return (
+        <EpubViewer
+          file={file}
+          fileName={fileName}
         />
       );
 

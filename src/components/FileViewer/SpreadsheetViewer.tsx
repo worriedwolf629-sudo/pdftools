@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Table, Download, Search, Loader2, Layers, Copy, Check
+  Table, Download, Search, Loader2, Layers, Copy, Check, FileText, Code
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { convertDataToPdfReport } from '../../utils/dataConverters';
 
 interface SpreadsheetViewerProps {
   file: File | Blob;
@@ -80,6 +81,44 @@ export const SpreadsheetViewer: React.FC<SpreadsheetViewerProps> = ({ file, file
     a.download = `${fileName.replace(/\.[^/.]+$/, '')}-${activeSheet}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJson = () => {
+    if (!workbook || !activeSheet) return;
+    const ws = workbook.Sheets[activeSheet];
+    const json = XLSX.utils.sheet_to_json(ws);
+    const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fileName.replace(/\.[^/.]+$/, '')}-${activeSheet}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const [convertingPdf, setConvertingPdf] = useState(false);
+  const handleConvertToPdf = async () => {
+    if (!workbook || !activeSheet) return;
+    try {
+      setConvertingPdf(true);
+      const ws = workbook.Sheets[activeSheet];
+      const rows = XLSX.utils.sheet_to_json(ws);
+      const pdfBytes = await convertDataToPdfReport(
+        rows.length ? rows : data,
+        `${fileName.replace(/\.[^/.]+$/, '')} - ${activeSheet}`
+      );
+      const blob = new Blob([pdfBytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName.replace(/\.[^/.]+$/, '')}-${activeSheet}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(`PDF conversion failed: ${err?.message || err}`);
+    } finally {
+      setConvertingPdf(false);
+    }
   };
 
   const handleDownloadOriginal = () => {
@@ -163,10 +202,28 @@ export const SpreadsheetViewer: React.FC<SpreadsheetViewerProps> = ({ file, file
 
           <button
             onClick={handleDownloadCsv}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white shadow-md shadow-emerald-700/20"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200"
             title="Download active sheet as CSV"
           >
             <Download className="w-4 h-4" /> CSV
+          </button>
+
+          <button
+            onClick={handleDownloadJson}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200"
+            title="Export sheet data as JSON"
+          >
+            <Code className="w-4 h-4 text-amber-400" /> JSON
+          </button>
+
+          <button
+            onClick={handleConvertToPdf}
+            disabled={convertingPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 font-semibold text-xs text-white shadow-md shadow-emerald-700/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+            title="Convert and export this spreadsheet as a formatted PDF table"
+          >
+            {convertingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            <span className="hidden sm:inline">{convertingPdf ? 'Exporting...' : 'Convert to PDF'}</span>
           </button>
 
           <button
