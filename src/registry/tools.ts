@@ -809,6 +809,278 @@ export const TOOLS: PDFTool[] = [
         { question: 'Can I print slides 2-up or 4-up?', answer: 'Yes! 2-up side-by-side or 4-up grid is ideal for creating printable lecture notes and presentation handouts.' }
       ]
     }
+  },
+  {
+    id: 'crop-pdf',
+    name: 'Crop PDF',
+    slug: 'crop-pdf',
+    category: 'organize',
+    categoryName: 'Organize Pages',
+    description: 'Trim PDF margins, remove white space, or crop custom page regions with a visual draggable crop box while preserving 100% vector text quality.',
+    shortDescription: 'Trim margins or crop PDF pages with visual crop box',
+    iconName: 'Crop',
+    keywords: ['crop pdf', 'trim pdf', 'cut pdf margins', 'pdf crop box', 'remove white borders', 'crop pages', 'margin trimmer'],
+    popular: true,
+    relatedToolIds: ['rotate-pdf', 'split-pdf', 'delete-pdf-pages', 'combine-pages-nup'],
+    seo: {
+      title: 'Crop PDF Online – Visual Bounding Box & Margin Trimmer',
+      metaDescription: 'Crop PDF pages online for free. Drag a visual crop box or set precise margins in millimeters. Output stays 100% vector sharp with no quality loss.',
+      h1: 'Crop PDF Pages & Trim Margins Online',
+      intro: 'Quickly remove excess borders, trim margins for e-readers, or focus on specific content regions. Preview each page live with a draggable crop box or enter exact numeric margins.',
+      howToSteps: [
+        { step: '1. Upload PDF', text: 'Select or drag your PDF document into the browser.' },
+        { step: '2. Adjust Crop Box', text: 'Drag the visual crop box handles or type top/bottom/left/right margins.' },
+        { step: '3. Choose Scope', text: 'Apply crop to all pages, current page, or a custom page range.' },
+        { step: '4. Download Cropped PDF', text: 'Click Crop PDF to download the trimmed vector document instantly.' }
+      ],
+      features: [
+        { title: '100% Vector Quality', desc: 'Adjusts standard PDF CropBox and MediaBox coordinates so vector text and graphics remain pin-sharp.' },
+        { title: 'Visual & Numeric Control', desc: 'Drag-and-resize bounding box directly over the live preview or specify exact mm margins.' },
+        { title: 'Custom Page Ranges', desc: 'Apply to all pages, odd/even pages, or individual sheets.' }
+      ],
+      faqs: [
+        { question: 'Does cropping reduce PDF quality?', answer: 'No! PDFCraft adjusts PDF viewport coordinates natively without rasterizing text or images into pixels.' },
+        { question: 'Can I crop different amounts on different pages?', answer: 'Yes, select Current Page or a custom range to apply specific crop dimensions.' }
+      ]
+    }
+  },
+  {
+    id: 'organize-pdf',
+    name: 'Organize PDF',
+    slug: 'organize-pdf',
+    category: 'organize',
+    categoryName: 'Organize Pages',
+    description: 'Visually rearrange, drag-and-drop reorder, rotate, duplicate, delete, and insert blank pages or pages from other PDFs in a fast virtualized grid.',
+    shortDescription: 'Visual drag-and-drop grid to sort, rotate, duplicate, and merge pages',
+    iconName: 'LayoutGrid',
+    keywords: ['organize pdf', 'reorder pdf pages', 'sort pdf pages', 'arrange pdf', 'rearrange pages', 'pdf page organizer', 'move pdf pages'],
+    popular: true,
+    relatedToolIds: ['merge-pdf', 'split-pdf', 'delete-pdf-pages', 'rotate-pdf'],
+    seo: {
+      title: 'Organize PDF Online – Visual Drag-and-Drop Page Organizer',
+      metaDescription: 'Reorder, rotate, delete, duplicate, and insert pages in your PDF with an intuitive visual thumbnail grid. Fast, private, and 100% client-side.',
+      h1: 'Organize & Rearrange PDF Pages Visually',
+      intro: 'The all-in-one page management workspace. Drag and drop thumbnails to reorder, rotate individual sheets, duplicate sections, delete unwanted pages, and insert pages from other documents.',
+      howToSteps: [
+        { step: '1. Select PDF File', text: 'Open the PDF you want to organize.' },
+        { step: '2. Drag to Reorder', text: 'Drag thumbnails to sort pages in your preferred sequence.' },
+        { step: '3. Rotate, Delete, or Add', text: 'Use one-click tools to rotate pages, remove duplicates, or insert blank sheets.' },
+        { step: '4. Save Organized PDF', text: 'Export your newly structured PDF document in milliseconds.' }
+      ],
+      features: [
+        { title: 'Drag-and-Drop Reordering', desc: 'Fluid and intuitive page sorting with instant visual feedback.' },
+        { title: 'Multi-Page Selection', desc: 'Select multiple pages to rotate, duplicate, or delete simultaneously.' },
+        { title: 'Merge Extra Pages', desc: 'Easily append or insert pages from another PDF directly into the grid.' }
+      ],
+      faqs: [
+        { question: 'Does this handle large 200+ page PDFs smoothly?', answer: 'Yes! The grid employs lazy-loaded virtual thumbnails so even large books and manuals load effortlessly.' },
+        { question: 'Are original bookmarks and links preserved?', answer: 'Page structures and contents are cleanly copied using native PDFDocument primitives.' }
+      ]
+    }
+  },
+  {
+    id: 'pdf-forms',
+    name: 'Fill & Sign PDF Forms',
+    slug: 'pdf-forms',
+    category: 'forms-signatures',
+    categoryName: 'Sign PDF',
+    description: 'Detect and fill interactive AcroForm text fields, checkboxes, radio buttons, and dropdowns with optional flattening, or place free text, checkmarks, and signatures on any PDF.',
+    shortDescription: 'Fill interactive AcroForm fields, checkboxes, or place text & signatures',
+    iconName: 'FileCheck',
+    keywords: ['fill pdf form', 'pdf forms', 'acroform', 'fillable pdf', 'flatten pdf form', 'check pdf box', 'sign form', 'form filler'],
+    popular: true,
+    relatedToolIds: ['sign-pdf', 'edit-pdf', 'watermark-pdf', 'protect-pdf'],
+    seo: {
+      title: 'Fill & Sign PDF Forms Online – Free AcroForm Editor',
+      metaDescription: 'Fill interactive PDF forms, check boxes, select dropdowns, and sign documents online. Flatten forms for unalterable submissions with zero server upload.',
+      h1: 'Fill, Sign & Flatten PDF Forms Online',
+      intro: 'Effortlessly fill government forms, tax returns, contracts, and applications. PDFCraft auto-detects form fields and also lets you stamp freeform text and signatures anywhere on non-interactive documents.',
+      howToSteps: [
+        { step: '1. Upload Form PDF', text: 'Open your fillable or standard PDF form.' },
+        { step: '2. Fill Fields or Place Text', text: 'Type into detected fields, check boxes, or click anywhere to add custom text & signature.' },
+        { step: '3. Optional Flattening', text: 'Choose whether to keep form fields editable or flatten them permanently.' },
+        { step: '4. Download Filled PDF', text: 'Save your completed, ready-to-submit document.' }
+      ],
+      features: [
+        { title: 'Interactive Form Detection', desc: 'Automatically recognizes text fields, checkboxes, dropdown lists, and radio buttons.' },
+        { title: 'Form Flattening', desc: 'Locks form inputs into the document graphics stream so values cannot be tampered with.' },
+        { title: 'Free Text & Signature Placement', desc: 'Fill flat non-interactive scans by placing text and drawn signatures anywhere.' }
+      ],
+      faqs: [
+        { question: 'What does "Flattening" do?', answer: 'Flattening burns filled form data into the page canvas so nobody can modify your answers later.' },
+        { question: 'Can I fill tax forms and job applications?', answer: 'Yes! Standard W-9, IRS, visa, bank, and university forms with AcroFields are supported.' }
+      ]
+    }
+  },
+  {
+    id: 'redact-pdf',
+    name: 'Redact PDF',
+    slug: 'redact-pdf',
+    category: 'security',
+    categoryName: 'Security & Password',
+    description: 'Permanently sanitize sensitive information using manual box drawing or search-based redaction (text, regex, email, phone) with real stream-level sanitization & verified zero text leakage.',
+    shortDescription: 'Permanently blackout and sanitize sensitive text, emails & phone numbers',
+    iconName: 'ShieldAlert',
+    keywords: ['redact pdf', 'blackout pdf', 'sanitize pdf', 'hide sensitive info', 'permanent redaction', 'remove confidential text', 'censor pdf'],
+    popular: true,
+    relatedToolIds: ['protect-pdf', 'unlock-pdf', 'edit-pdf'],
+    seo: {
+      title: 'Redact PDF Online – Permanently Blackout & Sanitize Sensitive Data',
+      metaDescription: 'Permanent, unrecoverable PDF redaction. Remove private text, emails, phone numbers, and SSNs. Sanitized pages prevent forensic recovery with 100% confidentiality.',
+      h1: 'Permanently Redact & Sanitize PDF Documents',
+      intro: 'Protect confidential information before sharing. PDFCraft performs real forensic redaction: sensitive text and data streams are permanently eradicated rather than hidden behind superficial black boxes.',
+      howToSteps: [
+        { step: '1. Upload PDF Document', text: 'Choose the file containing sensitive or confidential data.' },
+        { step: '2. Find or Draw Redactions', text: 'Search for keywords, emails, phone numbers, or draw blackout rectangles over any section.' },
+        { step: '3. Sanitize Content', text: 'Click "Apply Redactions" to permanently burn redactions and scrub underlying text streams.' },
+        { step: '4. Download Sanitized PDF', text: 'Verify 0% data leakage with the built-in forensic inspector and download.' }
+      ],
+      features: [
+        { title: 'Forensic-Grade Sanitization', desc: 'Permanently destroys underlying text data so text cannot be highlighted, copied, or recovered.' },
+        { title: 'Smart Search Presets', desc: 'One-click detection for email addresses, phone numbers, tax IDs, and custom regular expressions.' },
+        { title: 'Leakage Verification', desc: 'Automatic post-sanitization audit ensures zero residual text matches exist in the file.' }
+      ],
+      faqs: [
+        { question: 'Is this real redaction or just a black box overlay?', answer: 'Real redaction! Superficial black boxes in basic editors leave raw text readable under inspection. PDFCraft renders and replaces redacted sections with sanitized image streams.' },
+        { question: 'Can someone undo redaction after downloading?', answer: 'No. The redacted data is permanently removed before the output file is generated.' }
+      ]
+    }
+  },
+  {
+    id: 'pdf-to-markdown',
+    name: 'PDF to Markdown',
+    slug: 'pdf-to-markdown',
+    category: 'convert-pdf',
+    categoryName: 'Convert PDF',
+    description: 'Extract structured content from PDF into clean Markdown (.md) with headings, bullet lists, code, and tables. Includes optional OCR for scanned documents.',
+    shortDescription: 'Convert PDF text, headings, and tables into clean Markdown (.md)',
+    iconName: 'FileCode',
+    keywords: ['pdf to markdown', 'pdf to md', 'extract markdown', 'convert pdf to md', 'pdf markdown converter', 'pdf to text'],
+    popular: true,
+    relatedToolIds: ['pdf-to-text', 'markdown-to-pdf', 'ocr-pdf'],
+    seo: {
+      title: 'PDF to Markdown Converter Online – Free & Private',
+      metaDescription: 'Convert PDF documents to clean Markdown (.md) online. Preserves headings (#, ##), bullet points, paragraphs, and tables. Supports OCR for scanned files.',
+      h1: 'Convert PDF to Clean Structured Markdown (.md)',
+      intro: 'Transform reports, research papers, and technical manuals into developer-friendly Markdown. PDFCraft parses font metrics to reconstruct headings, lists, code snippets, and markdown tables.',
+      howToSteps: [
+        { step: '1. Select PDF File', text: 'Drop your PDF into the converter.' },
+        { step: '2. Automated Parsing', text: 'PDF.js extracts text items and analyzes font sizes to generate structured markdown syntax.' },
+        { step: '3. Preview & Edit', text: 'Review the formatted Markdown or rendered HTML preview side-by-side.' },
+        { step: '4. Copy or Download', text: 'Copy to clipboard or download the .md file with one click.' }
+      ],
+      features: [
+        { title: 'Smart Heading Detection', desc: 'Distinguishes # H1, ## H2, and ### H3 headers based on document typography and font weights.' },
+        { title: 'List & Table Formatting', desc: 'Automatically formats bullet points, numbered lists, and tabular data into clean Markdown tables.' },
+        { title: 'OCR Fallback for Scans', desc: 'Includes browser Tesseract OCR for documents consisting of scanned paper photos.' }
+      ],
+      faqs: [
+        { question: 'Can I import the Markdown into Obsidian, Notion, or GitHub?', answer: 'Yes! The exported Markdown is standard CommonMark compatible with Notion, Obsidian, GitHub, and VS Code.' },
+        { question: 'Does it work with scanned PDFs?', answer: 'Yes! If no digital text is found, you can trigger built-in browser OCR to extract text from images.' }
+      ]
+    }
+  },
+  {
+    id: 'repair-pdf',
+    name: 'Repair PDF',
+    slug: 'repair-pdf',
+    category: 'metadata-info',
+    categoryName: 'Metadata & Info',
+    description: 'Analyze and recover damaged, broken, or unreadable PDF files by rebuilding cross-reference tables, repairing corrupt headers, and salvaging readable page streams.',
+    shortDescription: 'Recover damaged PDFs, fix broken xref tables & repair corrupted streams',
+    iconName: 'Wrench',
+    keywords: ['repair pdf', 'fix corrupted pdf', 'fix damaged pdf', 'rebuild xref', 'salvage pdf', 'recover pdf', 'broken pdf fixer'],
+    popular: true,
+    relatedToolIds: ['unlock-pdf', 'pdf-info', 'compress-pdf'],
+    seo: {
+      title: 'Repair Corrupted PDF Files Online – Free PDF Fixer',
+      metaDescription: 'Repair unreadable and damaged PDF files for free. Rebuild broken xref tables, fix corrupt headers, and salvage page data with 100% private offline recovery.',
+      h1: 'Repair & Recover Damaged PDF Documents',
+      intro: 'Cannot open an important PDF due to corruption or unexpected EOF errors? PDFCraft scans low-level byte structures, reconstructs cross-reference indexes, and restores accessible pages.',
+      howToSteps: [
+        { step: '1. Select Corrupted PDF', text: 'Upload the unreadable or damaged document.' },
+        { step: '2. Deep File Diagnosis', text: 'Our recovery engine scans for valid object markers, reconstructs xref tables, and fixes broken trailers.' },
+        { step: '3. Review Recovery Log', text: 'See a detailed diagnostic report showing repaired streams and salvaged pages.' },
+        { step: '4. Download Repaired PDF', text: 'Download a clean, fully compliant PDF file that opens smoothly in all viewers.' }
+      ],
+      features: [
+        { title: 'Cross-Reference (XRef) Rebuilding', desc: 'Re-indexes broken and missing object offsets across damaged files.' },
+        { title: 'Stream & Header Salvage', desc: 'Corrects missing %PDF headers, cleans junk bytes, and fixes truncated EOF blocks.' },
+        { title: 'Honest Diagnostic Report', desc: 'Transparently details every repaired object and flags any irrecoverable pages.' }
+      ],
+      faqs: [
+        { question: 'Can all damaged PDFs be fixed?', answer: 'Most PDFs with damaged indexes, truncated trailers, or corrupted headers can be recovered. Severely wiped files missing actual stream content cannot be fabricated.' },
+        { question: 'Will repaired files open in Adobe Reader and Chrome?', answer: 'Yes! The recovered file is rebuilt to standard ISO 32000 PDF specifications.' }
+      ]
+    }
+  },
+  {
+    id: 'office-to-pdf',
+    name: 'Word / Excel / PPT / HTML to PDF',
+    slug: 'office-to-pdf',
+    category: 'convert-pdf',
+    categoryName: 'Convert PDF',
+    description: 'Convert Microsoft Word (.docx), Excel spreadsheets (.xlsx, .csv), PowerPoint slide decks (.pptx), and HTML web documents into high-quality PDFs 100% offline in your browser.',
+    shortDescription: 'Convert Word (DOCX), Excel (XLSX), PowerPoint (PPTX), and HTML to PDF',
+    iconName: 'FileSpreadsheet',
+    keywords: ['word to pdf', 'excel to pdf', 'powerpoint to pdf', 'ppt to pdf', 'docx to pdf', 'xlsx to pdf', 'html to pdf', 'office to pdf', 'convert docx to pdf'],
+    popular: true,
+    relatedToolIds: ['pdf-to-office', 'open-file', 'jpg-to-pdf', 'markdown-to-pdf'],
+    seo: {
+      title: 'Word, Excel, PowerPoint & HTML to PDF Converter Online',
+      metaDescription: 'Convert Word DOCX, Excel XLSX, PowerPoint PPTX, and HTML to PDF directly in your browser. 100% private client-side conversion with zero file uploads.',
+      h1: 'Convert Word, Excel, PowerPoint & HTML to PDF',
+      intro: 'Convert standard office documents to universally readable PDFs without sending your confidential data to third-party cloud servers.',
+      howToSteps: [
+        { step: '1. Select Office Document', text: 'Upload DOCX, XLSX, PPTX, or HTML document.' },
+        { step: '2. Client-Side Rendering', text: 'Document engines parse tables, styles, and slides locally inside your browser.' },
+        { step: '3. Preview Output', text: 'Verify converted pages and formatting before downloading.' },
+        { step: '4. Download PDF', text: 'Download your standardized PDF document immediately.' }
+      ],
+      features: [
+        { title: 'Multi-Format Support', desc: 'Convert Word (.docx), Excel (.xlsx, .csv), PowerPoint (.pptx), and HTML web code.' },
+        { title: 'Vector & Text Preservation', desc: 'Preserves selectable text, formatting, and high-resolution presentation slides.' },
+        { title: 'Zero Cloud Uploads', desc: 'All parsing and PDF generation runs 100% locally on your machine.' }
+      ],
+      faqs: [
+        { question: 'Are my confidential documents uploaded to a cloud server?', answer: 'Never! All document parsing (Mammoth, SheetJS, PPTX renderer) runs entirely in your local browser memory.' },
+        { question: 'How close is the layout to Microsoft Office?', answer: 'Clean documents, tables, and presentation slides convert cleanly. Ultra-complex proprietary Word desktop macros and dynamic shapes may show approximate rendering.' }
+      ]
+    }
+  },
+  {
+    id: 'pdf-to-office',
+    name: 'PDF to Word / Excel',
+    slug: 'pdf-to-office',
+    category: 'convert-pdf',
+    categoryName: 'Convert PDF',
+    description: 'Convert PDF documents into editable Microsoft Word (.docx) documents and structured Excel (.xlsx) spreadsheets client-side, with headings, paragraphs, and table grid detection.',
+    shortDescription: 'Convert PDF to editable Word (.docx) and Excel (.xlsx) spreadsheets',
+    iconName: 'FileOutput',
+    keywords: ['pdf to word', 'pdf to docx', 'pdf to excel', 'pdf to xlsx', 'convert pdf to word', 'convert pdf to excel', 'pdf to spreadsheet', 'extract tables to excel'],
+    popular: true,
+    relatedToolIds: ['office-to-pdf', 'pdf-to-text', 'pdf-to-markdown', 'open-file'],
+    seo: {
+      title: 'Convert PDF to Word (DOCX) & Excel (XLSX) Online',
+      metaDescription: 'Convert PDF to editable Word (.docx) and Excel (.xlsx) spreadsheets online for free. Reconstruct headings, text, and tables client-side with complete privacy.',
+      h1: 'Convert PDF to Editable Word (.docx) & Excel (.xlsx)',
+      intro: 'Need to edit a PDF in Microsoft Word or analyze PDF financial tables in Microsoft Excel? PDFCraft extracts layout structures and converts them directly into editable Office files.',
+      howToSteps: [
+        { step: '1. Upload PDF File', text: 'Select the PDF document you need to convert.' },
+        { step: '2. Choose Target Format', text: 'Select Word Document (.docx) or Excel Spreadsheet (.xlsx).' },
+        { step: '3. Extract & Structure', text: 'PDF.js extracts paragraphs, font weights, and 2D grid coordinates.' },
+        { step: '4. Download Editable File', text: 'Download your editable Word or Excel file.' }
+      ],
+      features: [
+        { title: 'Editable Word (.docx)', desc: 'Generates standard OpenXML Word documents with preserved headings, bold styles, and paragraphs.' },
+        { title: 'Structured Excel (.xlsx)', desc: 'Intelligently detects table rows and columns from coordinate layout matrices.' },
+        { title: '100% Private Offline Processing', desc: 'Your confidential financial and business documents never leave your browser.' }
+      ],
+      faqs: [
+        { question: 'Can I edit the generated DOCX in Microsoft Word and Google Docs?', answer: 'Yes! The output is a standard Office OpenXML (.docx) file fully compatible with Word, Google Docs, and LibreOffice.' },
+        { question: 'What about scanned paper documents?', answer: 'Scanned image PDFs contain no digital text streams. Use our OCR tool first to recognize text before converting to editable Word.' }
+      ]
+    }
   }
 ];
 

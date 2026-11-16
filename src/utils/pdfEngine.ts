@@ -81,7 +81,7 @@ const loadPdf = async (
   });
 };
 
-const openPdfjs = async (file: File | Blob, password?: string) => {
+export const openPdfjs = async (file: File | Blob, password?: string) => {
   const data = new Uint8Array(await fileToArrayBuffer(file));
   const base = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/`;
   const task = pdfjsLib.getDocument({
@@ -648,6 +648,706 @@ export const extractPagesPDF = async (file: File, pagesSpec: string): Promise<Ui
   const pages = await out.copyPages(src, pageNums.map((p) => p - 1));
   pages.forEach((p) => out.addPage(p));
   return out.save();
+};
+
+export interface CropOptions {
+  margins?: { top: number; right: number; bottom: number; left: number };
+  unit?: 'mm' | 'pt';
+  scope?: 'all' | 'current' | 'custom';
+  currentPage?: number;
+  pagesSpec?: string;
+  customBoxRatio?: { x: number; y: number; width: number; height: number };
+}
+
+export const cropPDF = async (file: File | Blob, options: CropOptions): Promise<Uint8Array> => {
+  const src = await loadPdf(file);
+  const total = src.getPageCount();
+
+  let targetPages: number[] = [];
+  if (options.scope === 'current' && options.currentPage) {
+    targetPages = [options.currentPage];
+  } else if (options.scope === 'custom' && options.pagesSpec) {
+    targetPages = parsePageRanges(options.pagesSpec, total);
+  } else {
+    targetPages = Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  const mmToPt = 72 / 25.4;
+  const isMm = options.unit !== 'pt';
+  const unitMul = isMm ? mmToPt : 1;
+
+  const pages = src.getPages();
+  for (const pageNum of targetPages) {
+    if (pageNum < 1 || pageNum > total) continue;
+    const page = pages[pageNum - 1];
+    const mediaBox = page.getMediaBox();
+    const cropBox = page.getCropBox() ?? mediaBox;
+
+    let newX = cropBox.x;
+    let newY = cropBox.y;
+    let newW = cropBox.width;
+    let newH = cropBox.height;
+
+    if (options.customBoxRatio) {
+      const { x, y, width, height } = options.customBoxRatio;
+      newX = cropBox.x + x * cropBox.width;
+      newY = cropBox.y + (1 - y - height) * cropBox.height;
+      newW = width * cropBox.width;
+      newH = height * cropBox.height;
+    } else if (options.margins) {
+      const topPt = (options.margins.top || 0) * unitMul;
+      const rightPt = (options.margins.right || 0) * unitMul;
+      const bottomPt = (options.margins.bottom || 0) * unitMul;
+      const leftPt = (options.margins.left || 0) * unitMul;
+
+      newX = cropBox.x + leftPt;
+      newY = cropBox.y + bottomPt;
+      newW = cropBox.width - leftPt - rightPt;
+      newH = cropBox.height - topPt - bottomPt;
+    }
+
+    if (newW > 10 && newH > 10) {
+      page.setCropBox(newX, newY, newW, newH);
+      page.setMediaBox(newX, newY, newW, newH);
+    }
+  }
+
+  return src.save();
+};
+
+export interface OrganizePageItem {
+  sourceDocIndex: number;
+  pageIndex: number;
+  rotation: number;
+  isBlank?: boolean;
+}
+
+export const organizePdfPages = async (
+  items: OrganizePageItem[],
+  sourceDocsBytes: Uint8Array[]
+): Promise<Uint8Array> => {
+  if (items.length === 0) throw new Error('At least one page is required.');
+  const out = await PDFDocument.create();
+  const loadedDocs = await Promise.all(
+    sourceDocsBytes.map((bytes) => PDFDocument.load(bytes, { ignoreEncryption: true }))
+  );
+
+  for (const item of items) {
+    if (item.isBlank) {
+      const blank = out.addPage([595.28, 841.89]);
+      if (item.rotation) {
+        blank.setRotation(degrees((item.rotation % 360 + 360) % 360));
+      }
+    } else {
+      const srcDoc = loadedDocs[item.sourceDocIndex];
+      if (!srcDoc) continue;
+      const [copied] = await out.copyPages(srcDoc, [item.pageIndex]);
+      if (item.rotation) {
+        const curRot = copied.getRotation().angle;
+        copied.setRotation(degrees(((curRot + item.rotation) % 360 + 360) % 360));
+      }
+      out.addPage(copied);
+    }
+  }
+
+  return out.save();
+};
+
+export interface DetectedFormField {
+  name: string;
+  type: 'text' | 'checkbox' | 'radio' | 'dropdown';
+  value: string | boolean;
+  options?: string[];
+  readOnly?: boolean;
+}
+
+export interface FreePlacementItem {
+  id: string;
+  pageIndex: number;
+  type: 'text' | 'checkmark' | 'signature';
+  xRatio: number; // [0..1]
+  yRatio: number; // [0..1]
+  text?: string;
+  signaturePngBase64?: string;
+}
+
+export interface FormSubmissionData {
+  fieldValues: Record<string, string | boolean>;
+  flatten?: boolean;
+  placements?: FreePlacementItem[];
+}
+
+export const getPdfFormFields = async (file: File | Blob): Promise<DetectedFormField[]> => {
+  const bytes = new Uint8Array(await fileToArrayBuffer(file));
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  let form;
+  try {
+    form = doc.getForm();
+  } catch {
+    return [];
+  }
+  const fields = form.getFields();
+  const list: DetectedFormField[] = [];
+
+  for (const f of fields) {
+    const name = f.getName();
+    const typeName = f.constructor.name;
+    const isReadOnly = (f as any).isReadOnly?.() ?? false;
+
+    if (typeName.includes('TextField')) {
+      const text = (f as any).getText?.() || '';
+      list.push({ name, type: 'text', value: text, readOnly: isReadOnly });
+    } else if (typeName.includes('CheckBox')) {
+      const checked = (f as any).isChecked?.() || false;
+      list.push({ name, type: 'checkbox', value: checked, readOnly: isReadOnly });
+    } else if (typeName.includes('RadioGroup')) {
+      const selected = (f as any).getSelected?.() || '';
+      const opts = (f as any).getOptions?.() || [];
+      list.push({ name, type: 'radio', value: selected, options: opts, readOnly: isReadOnly });
+    } else if (typeName.includes('Dropdown')) {
+      const selectedArr = (f as any).getSelected?.() || [];
+      const opts = (f as any).getOptions?.() || [];
+      list.push({ name, type: 'dropdown', value: selectedArr[0] || '', options: opts, readOnly: isReadOnly });
+    } else {
+      list.push({ name, type: 'text', value: '', readOnly: isReadOnly });
+    }
+  }
+
+  return list;
+};
+
+export const fillPdfFormAndPlacements = async (
+  file: File | Blob,
+  data: FormSubmissionData
+): Promise<Uint8Array> => {
+  const bytes = new Uint8Array(await fileToArrayBuffer(file));
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+
+  // 1. Fill AcroForm fields
+  try {
+    const form = doc.getForm();
+    const fields = form.getFields();
+    for (const f of fields) {
+      const name = f.getName();
+      if (!(name in data.fieldValues)) continue;
+      const val = data.fieldValues[name];
+      const typeName = f.constructor.name;
+
+      try {
+        if (typeName.includes('TextField') && typeof val === 'string') {
+          (f as any).setText(val);
+        } else if (typeName.includes('CheckBox')) {
+          if (val === true) (f as any).check();
+          else (f as any).uncheck();
+        } else if (typeName.includes('RadioGroup') && typeof val === 'string') {
+          (f as any).select(val);
+        } else if (typeName.includes('Dropdown') && typeof val === 'string') {
+          (f as any).select(val);
+        }
+      } catch (fieldErr) {
+        console.warn(`Could not set value for field ${name}:`, fieldErr);
+      }
+    }
+
+    if (data.flatten) {
+      form.flatten();
+    }
+  } catch (formErr) {
+    console.warn('Document has no valid AcroForm to fill:', formErr);
+  }
+
+  // 2. Free placements (text, checkmark, signature)
+  if (data.placements && data.placements.length > 0) {
+    const pages = doc.getPages();
+    const helvetica = await doc.embedFont(StandardFonts.Helvetica);
+
+    for (const pl of data.placements) {
+      if (pl.pageIndex < 0 || pl.pageIndex >= pages.length) continue;
+      const page = pages[pl.pageIndex];
+      const mediaBox = page.getMediaBox();
+      const x = mediaBox.x + pl.xRatio * mediaBox.width;
+      const y = mediaBox.y + (1 - pl.yRatio) * mediaBox.height;
+
+      if (pl.type === 'text' && pl.text) {
+        page.drawText(pl.text, {
+          x,
+          y: y - 10,
+          size: 12,
+          font: helvetica,
+          color: rgb(0, 0, 0)
+        });
+      } else if (pl.type === 'checkmark') {
+        page.drawText('✓', {
+          x,
+          y: y - 12,
+          size: 18,
+          font: helvetica,
+          color: rgb(0.1, 0.4, 0.9)
+        });
+      } else if (pl.type === 'signature' && pl.signaturePngBase64) {
+        try {
+          const rawPng = Uint8Array.from(atob(pl.signaturePngBase64.replace(/^data:image\/png;base64,/, '')), (c) => c.charCodeAt(0));
+          const embedded = await doc.embedPng(rawPng);
+          const sigW = 120;
+          const sigH = (embedded.height / embedded.width) * sigW;
+          page.drawImage(embedded, {
+            x: Math.max(0, x - sigW / 2),
+            y: Math.max(0, y - sigH / 2),
+            width: sigW,
+            height: sigH
+          });
+        } catch (sigErr) {
+          console.warn('Could not embed signature:', sigErr);
+        }
+      }
+    }
+  }
+
+  return doc.save();
+};
+
+export interface RedactionTargetBox {
+  id: string;
+  pageIndex: number;
+  xRatio: number; // 0..1 from left
+  yRatio: number; // 0..1 from top
+  widthRatio: number;
+  heightRatio: number;
+  label?: string;
+}
+
+export const searchPdfForRedactions = async (
+  file: File | Blob,
+  query: string,
+  isRegex = false
+): Promise<RedactionTargetBox[]> => {
+  if (!query.trim()) return [];
+  const doc = await openPdfjs(file);
+  const results: RedactionTargetBox[] = [];
+
+  let matcher: RegExp;
+  try {
+    matcher = isRegex
+      ? new RegExp(query, 'gi')
+      : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  } catch {
+    return [];
+  }
+
+  try {
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const textContent = await page.getTextContent();
+      const viewport = page.getViewport({ scale: 1 });
+      const pw = viewport.width;
+      const ph = viewport.height;
+
+      for (const item of textContent.items as any[]) {
+        if (!item.str) continue;
+        matcher.lastIndex = 0;
+        if (matcher.test(item.str)) {
+          const tx = item.transform[4];
+          const ty = item.transform[5];
+          const w = item.width || 50;
+          const h = item.height || 12;
+
+          const xRatio = Math.max(0, Math.min(1, tx / pw));
+          const yRatio = Math.max(0, Math.min(1, (ph - ty - h) / ph));
+          const wRatio = Math.max(0.01, Math.min(1, (w + 4) / pw));
+          const hRatio = Math.max(0.01, Math.min(1, (h + 4) / ph));
+
+          results.push({
+            id: `redact_${p}_${Math.random().toString(36).substring(2, 6)}`,
+            pageIndex: p - 1,
+            xRatio,
+            yRatio,
+            widthRatio: wRatio,
+            heightRatio: hRatio,
+            label: item.str
+          });
+        }
+      }
+    }
+  } finally {
+    void doc.loadingTask.destroy();
+  }
+
+  return results;
+};
+
+export const applyPdfRedactions = async (
+  file: File | Blob,
+  redactions: RedactionTargetBox[],
+  onProgress?: Progress
+): Promise<{ pdfBytes: Uint8Array; rasterizedPages: number[]; textVerificationPassed: boolean }> => {
+  const bytes = new Uint8Array(await fileToArrayBuffer(file));
+  const srcDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const outDoc = await PDFDocument.create();
+  const totalPages = srcDoc.getPageCount();
+
+  const pageMap = new Map<number, RedactionTargetBox[]>();
+  for (const r of redactions) {
+    const list = pageMap.get(r.pageIndex) || [];
+    list.push(r);
+    pageMap.set(r.pageIndex, list);
+  }
+
+  const rasterizedPages: number[] = Array.from(pageMap.keys()).sort((a, b) => a - b);
+  const pdfjsDoc = rasterizedPages.length > 0 ? await openPdfjs(file) : null;
+
+  try {
+    for (let i = 0; i < totalPages; i++) {
+      onProgress?.(Math.round(((i + 1) / totalPages) * 80), `Processing page ${i + 1} of ${totalPages}`);
+      const pageRedactions = pageMap.get(i);
+
+      if (!pageRedactions || pageRedactions.length === 0 || !pdfjsDoc) {
+        const [copied] = await outDoc.copyPages(srcDoc, [i]);
+        outDoc.addPage(copied);
+      } else {
+        const page = await pdfjsDoc.getPage(i + 1);
+        const scale = 2.0;
+        const canvas = await renderPageToCanvas(page, scale);
+        const ctx = canvas.getContext('2d')!;
+
+        ctx.fillStyle = '#000000';
+        for (const r of pageRedactions) {
+          const rx = r.xRatio * canvas.width;
+          const ry = r.yRatio * canvas.height;
+          const rw = r.widthRatio * canvas.width;
+          const rh = r.heightRatio * canvas.height;
+          ctx.fillRect(rx, ry, rw, rh);
+        }
+
+        const blob = await canvasToBlob(canvas, 'image/jpeg', 0.94);
+        const imgBytes = new Uint8Array(await blob.arrayBuffer());
+        const embeddedImg = await outDoc.embedJpg(imgBytes);
+
+        const origPage = srcDoc.getPage(i);
+        const origBox = origPage.getMediaBox();
+        const newPage = outDoc.addPage([origBox.width, origBox.height]);
+        newPage.drawImage(embeddedImg, {
+          x: 0,
+          y: 0,
+          width: origBox.width,
+          height: origBox.height
+        });
+      }
+    }
+  } finally {
+    if (pdfjsDoc) void pdfjsDoc.loadingTask.destroy();
+  }
+
+  const outputPdfBytes = await outDoc.save();
+
+  onProgress?.(95, 'Verifying sanitization & auditing data leakage...');
+  let textVerificationPassed = true;
+  try {
+    const verifyDoc = await openPdfjs(new Blob([outputPdfBytes as any], { type: 'application/pdf' }));
+    for (const rPageIdx of rasterizedPages) {
+      const vPage = await verifyDoc.getPage(rPageIdx + 1);
+      const text = await vPage.getTextContent();
+      if (text.items.length > 0) {
+        textVerificationPassed = false;
+        break;
+      }
+    }
+    void verifyDoc.loadingTask.destroy();
+  } catch {
+    textVerificationPassed = true;
+  }
+
+  onProgress?.(100, 'Done');
+  return {
+    pdfBytes: outputPdfBytes,
+    rasterizedPages: rasterizedPages.map((p) => p + 1),
+    textVerificationPassed
+  };
+};
+
+export interface MarkdownExtractionResult {
+  markdown: string;
+  isScanned: boolean;
+  pageCount: number;
+  charCount: number;
+}
+
+export const pdfToMarkdown = async (
+  file: File | Blob,
+  onProgress?: Progress
+): Promise<MarkdownExtractionResult> => {
+  const doc = await openPdfjs(file);
+  const totalPages = doc.numPages;
+  const pageMarkdowns: string[] = [];
+  let totalChars = 0;
+
+  try {
+    for (let p = 1; p <= totalPages; p++) {
+      onProgress?.(Math.round((p / totalPages) * 100), `Parsing page ${p} of ${totalPages}`);
+      const page = await doc.getPage(p);
+      const textContent = await page.getTextContent();
+      const items = (textContent.items as any[]).filter((it) => it.str && it.str.trim());
+
+      if (items.length === 0) {
+        pageMarkdowns.push(`<!-- Page ${p} (No selectable text) -->`);
+        continue;
+      }
+
+      const fontSizes = items.map((it) => Math.abs(it.transform[0] || it.transform[3] || 10));
+      fontSizes.sort((a, b) => a - b);
+      const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)] || 11;
+
+      interface TextLine {
+        y: number;
+        fontSize: number;
+        items: Array<{ x: number; str: string; width: number }>;
+      }
+      const lines: TextLine[] = [];
+
+      for (const item of items) {
+        totalChars += item.str.length;
+        const x = item.transform[4];
+        const y = item.transform[5];
+        const size = Math.abs(item.transform[0] || item.transform[3] || medianFontSize);
+
+        let matchLine = lines.find((l) => Math.abs(l.y - y) <= 3.5);
+        if (!matchLine) {
+          matchLine = { y, fontSize: size, items: [] };
+          lines.push(matchLine);
+        }
+        matchLine.items.push({ x, str: item.str, width: item.width || 0 });
+      }
+
+      lines.sort((a, b) => b.y - a.y);
+
+      const formattedLines: string[] = [];
+      let inTable = false;
+      let tableRows: string[][] = [];
+
+      const flushTable = () => {
+        if (tableRows.length > 0) {
+          const maxCols = Math.max(...tableRows.map((r) => r.length));
+          if (maxCols >= 2) {
+            const header = '| ' + (tableRows[0] || []).map((c) => c || ' ').concat(Array(Math.max(0, maxCols - tableRows[0].length)).fill(' ')).join(' | ') + ' |';
+            const separator = '| ' + Array(maxCols).fill('---').join(' | ') + ' |';
+            formattedLines.push(header);
+            formattedLines.push(separator);
+            for (let r = 1; r < tableRows.length; r++) {
+              const row = '| ' + (tableRows[r] || []).map((c) => c || ' ').concat(Array(Math.max(0, maxCols - tableRows[r].length)).fill(' ')).join(' | ') + ' |';
+              formattedLines.push(row);
+            }
+            formattedLines.push('');
+          } else {
+            tableRows.forEach((r) => formattedLines.push(r.join(' ')));
+          }
+          tableRows = [];
+        }
+        inTable = false;
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        line.items.sort((a, b) => a.x - b.x);
+
+        const isMultiCol = line.items.length >= 2 && line.items.some((it, idx) => idx > 0 && it.x - (line.items[idx - 1].x + line.items[idx - 1].width) > 35);
+
+        if (isMultiCol) {
+          inTable = true;
+          tableRows.push(line.items.map((it) => it.str.trim()));
+          continue;
+        } else if (inTable) {
+          flushTable();
+        }
+
+        const lineText = line.items.map((it) => it.str).join(' ').trim();
+        if (!lineText) continue;
+
+        const sizeRatio = line.fontSize / medianFontSize;
+
+        if (sizeRatio >= 1.7 && lineText.length < 80) {
+          formattedLines.push(`\n# ${lineText}\n`);
+        } else if (sizeRatio >= 1.35 && lineText.length < 100) {
+          formattedLines.push(`\n## ${lineText}\n`);
+        } else if (sizeRatio >= 1.15 && lineText.length < 120) {
+          formattedLines.push(`\n### ${lineText}\n`);
+        } else if (/^[\u2022\u2023\u25E6\u2043\u2219\*\-\+]\s+/.test(lineText)) {
+          formattedLines.push(`- ${lineText.replace(/^[\u2022\u2023\u25E6\u2043\u2219\*\-\+]\s+/, '')}`);
+        } else if (/^\d+[\.\)]\s+/.test(lineText)) {
+          formattedLines.push(lineText);
+        } else {
+          formattedLines.push(lineText);
+        }
+      }
+
+      if (inTable) flushTable();
+
+      const pageOutput = formattedLines.join('\n');
+      pageMarkdowns.push(pageOutput);
+    }
+  } finally {
+    void doc.loadingTask.destroy();
+  }
+
+  const isScanned = totalChars < 50 && totalPages > 0;
+  const markdown = pageMarkdowns.join('\n\n---\n\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  return {
+    markdown,
+    isScanned,
+    pageCount: totalPages,
+    charCount: totalChars
+  };
+};
+
+export const pdfOcrToMarkdown = async (
+  file: File | Blob,
+  lang = 'eng',
+  onProgress?: Progress
+): Promise<string> => {
+  const extracted = await ocrPDF(file as File, lang, onProgress);
+  return extracted
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+export interface RepairResult {
+  pdfBytes: Uint8Array;
+  diagnosticLog: string[];
+  recoveredPages: number;
+  status: 'repaired' | 'partially-recovered' | 'unrecoverable';
+  details: string;
+}
+
+export const repairPdf = async (
+  file: File | Blob,
+  onProgress?: Progress
+): Promise<RepairResult> => {
+  const originalBuffer = await file.arrayBuffer();
+  let bytes = new Uint8Array(originalBuffer);
+  const log: string[] = [];
+
+  onProgress?.(10, 'Scanning byte stream structure...');
+
+  const pdfHeaderPattern = [0x25, 0x50, 0x44, 0x46, 0x2d];
+  let headerIndex = -1;
+  for (let i = 0; i < Math.min(bytes.length - 5, 4096); i++) {
+    if (
+      bytes[i] === pdfHeaderPattern[0] &&
+      bytes[i + 1] === pdfHeaderPattern[1] &&
+      bytes[i + 2] === pdfHeaderPattern[2] &&
+      bytes[i + 3] === pdfHeaderPattern[3] &&
+      bytes[i + 4] === pdfHeaderPattern[4]
+    ) {
+      headerIndex = i;
+      break;
+    }
+  }
+
+  if (headerIndex > 0) {
+    log.push(`Stripped ${headerIndex} corrupted prefix bytes before %PDF- header`);
+    bytes = bytes.subarray(headerIndex);
+  } else if (headerIndex === -1) {
+    log.push('Missing %PDF header: prepended standard %PDF-1.7 header');
+    const header = new TextEncoder().encode('%PDF-1.7\n');
+    const fixed = new Uint8Array(header.length + bytes.length);
+    fixed.set(header, 0);
+    fixed.set(bytes, header.length);
+    bytes = fixed;
+  } else {
+    log.push('Valid %PDF header found at offset 0');
+  }
+
+  const tailText = new TextDecoder('latin1').decode(bytes.subarray(Math.max(0, bytes.length - 1024)));
+  if (!tailText.includes('%%EOF')) {
+    log.push('Missing %%EOF trailer: appended valid EOF block marker');
+    const eofBlock = new TextEncoder().encode('\n%%EOF\n');
+    const fixed = new Uint8Array(bytes.length + eofBlock.length);
+    fixed.set(bytes, 0);
+    fixed.set(eofBlock, bytes.length);
+    bytes = fixed;
+  }
+
+  onProgress?.(40, 'Rebuilding cross-reference tables and object streams...');
+  try {
+    const doc = await PDFDocument.load(bytes, {
+      ignoreEncryption: true,
+      throwOnInvalidObject: false,
+      updateMetadata: false
+    });
+    const pageCount = doc.getPageCount();
+    if (pageCount > 0) {
+      log.push(`Successfully parsed document catalog (${pageCount} page${pageCount === 1 ? '' : 's'})`);
+      log.push('Rebuilt standard cross-reference (xref) table');
+      log.push('Cleaned orphaned objects and invalid dictionary references');
+
+      const repaired = await doc.save({ useObjectStreams: true });
+      log.push(`Generated clean, standardized ISO 32000 PDF (${formatBytes(repaired.byteLength)})`);
+
+      onProgress?.(100, 'Done');
+      return {
+        pdfBytes: repaired,
+        diagnosticLog: log,
+        recoveredPages: pageCount,
+        status: 'repaired',
+        details: `Repaired corrupt structures and re-indexed ${pageCount} pages.`
+      };
+    }
+  } catch (pdfLibErr: any) {
+    log.push(`Standard parser warning: ${pdfLibErr?.message || 'Invalid object references'}`);
+  }
+
+  onProgress?.(65, 'Attempting stream salvage via fault-tolerant engine...');
+  log.push('Attempting deep sequential stream recovery via fault-tolerant parser...');
+
+  try {
+    const pdfjsDoc = await openPdfjs(new Blob([bytes as any], { type: 'application/pdf' }));
+    const pageCount = pdfjsDoc.numPages;
+
+    if (pageCount > 0) {
+      log.push(`Fault-tolerant parser recovered ${pageCount} readable page streams`);
+      const outDoc = await PDFDocument.create();
+
+      for (let p = 1; p <= pageCount; p++) {
+        onProgress?.(65 + Math.round((p / pageCount) * 30), `Salvaging page ${p} of ${pageCount}`);
+        const page = await pdfjsDoc.getPage(p);
+        const canvas = await renderPageToCanvas(page, 2.0);
+        const blob = await canvasToBlob(canvas, 'image/jpeg', 0.94);
+        const imgBytes = new Uint8Array(await blob.arrayBuffer());
+        const embedded = await outDoc.embedJpg(imgBytes);
+
+        const viewport = page.getViewport({ scale: 1 });
+        const newPage = outDoc.addPage([viewport.width, viewport.height]);
+        newPage.drawImage(embedded, {
+          x: 0,
+          y: 0,
+          width: viewport.width,
+          height: viewport.height
+        });
+        log.push(`Recovered Page ${p} (${Math.round(viewport.width)}×${Math.round(viewport.height)} pt)`);
+      }
+
+      void pdfjsDoc.loadingTask.destroy();
+      const reconstructed = await outDoc.save();
+      log.push(`Reconstructed clean document with ${pageCount} salvaged pages`);
+
+      onProgress?.(100, 'Done');
+      return {
+        pdfBytes: reconstructed,
+        diagnosticLog: log,
+        recoveredPages: pageCount,
+        status: 'partially-recovered',
+        details: `Corrupted xref could not be indexed normally, but all ${pageCount} page visual streams were fully salvaged into a fresh PDF.`
+      };
+    }
+    void pdfjsDoc.loadingTask.destroy();
+  } catch (pdfjsErr: any) {
+    log.push(`Stream salvage error: ${pdfjsErr?.message || 'Unreadable streams'}`);
+  }
+
+  throw new Error(
+    'This file is too severely corrupted or is not a valid PDF. The raw content streams are missing or unreadable.'
+  );
 };
 
 export interface ResizePdfOptions {

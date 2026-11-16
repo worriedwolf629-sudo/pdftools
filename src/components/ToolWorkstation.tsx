@@ -19,6 +19,14 @@ import {
 } from '../utils/pdfEngine';
 import { parseSizeToBytes } from '../utils/fileSizeTarget';
 import { ResultVerificationCard } from './ResultVerificationCard';
+import { CropPdfTool } from './tools/CropPdfTool';
+import { OrganizePdfTool } from './tools/OrganizePdfTool';
+import { PdfFormsTool } from './tools/PdfFormsTool';
+import { RedactPdfTool } from './tools/RedactPdfTool';
+import { PdfToMarkdownTool } from './tools/PdfToMarkdownTool';
+import { RepairPdfTool } from './tools/RepairPdfTool';
+import { OfficeToPdfTool } from './tools/OfficeToPdfTool';
+import { PdfToOfficeTool } from './tools/PdfToOfficeTool';
 import type {
   Annotation, CompareResult, CompressPreset, ImageFormat, NumberPosition, PdfInfo, PdfMetadata, Progress,
   NUpPagesOption, NUpReadingOrder, NUpSheetSize, NUpOrientation, NUpConfig
@@ -1138,6 +1146,107 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         );
       }
 
+      case 'crop-pdf':
+        if (!files[0]) return null;
+        return (
+          <CropPdfTool
+            file={files[0]}
+            onCropComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'PDF pages cropped successfully. Vector sharpness preserved.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'organize-pdf':
+        if (!files[0]) return null;
+        return (
+          <OrganizePdfTool
+            initialFile={files[0]}
+            onOrganizeComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'PDF organized and pages saved successfully.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'pdf-forms':
+        if (!files[0]) return null;
+        return (
+          <PdfFormsTool
+            file={files[0]}
+            onFormComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'PDF form saved and filled successfully.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'redact-pdf':
+        if (!files[0]) return null;
+        return (
+          <RedactPdfTool
+            file={files[0]}
+            onRedactComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'PDF forensically redacted and sanitized successfully.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'pdf-to-markdown':
+        if (!files[0]) return null;
+        return (
+          <PdfToMarkdownTool
+            file={files[0]}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'repair-pdf':
+        if (!files[0]) return null;
+        return (
+          <RepairPdfTool
+            file={files[0]}
+            onRepairComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'PDF repaired and reconstructed successfully.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'office-to-pdf':
+        return (
+          <OfficeToPdfTool
+            initialFile={files[0]}
+            onConvertComplete={(blob, filename) => {
+              blob.arrayBuffer().then((buf) => {
+                finishPdf(new Uint8Array(buf), filename, 'Office document converted to PDF successfully.');
+              });
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
+      case 'pdf-to-office':
+        if (!files[0]) return null;
+        return (
+          <PdfToOfficeTool
+            file={files[0]}
+            onError={(msg) => setError(msg)}
+          />
+        );
+
       default:
         return null;
     }
@@ -1145,7 +1254,7 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
 
   const optionsVisible = TEXT_TOOLS.includes(id) || files.length > 0;
   const hasSettings = !['merge-pdf', 'pdf-to-text', 'extract-images', 'compare-pdf', 'text-to-pdf', 'markdown-to-pdf'].includes(id) && files.length > 0;
-  const hideRunButton = id === 'pdf-info';
+  const hideRunButton = ['pdf-info', 'crop-pdf', 'organize-pdf', 'pdf-forms', 'redact-pdf', 'pdf-to-markdown', 'repair-pdf', 'office-to-pdf', 'pdf-to-office'].includes(id);
   const runDisabled = busy || (needsFile(id) && files.length === 0) || (id === 'compare-pdf' && files.length !== 2) || (id === 'merge-pdf' && files.length < 2);
 
   const diffToShow = compare ? compare.ops.filter((o) => showSame || o.type !== 'same') : [];
@@ -1164,13 +1273,29 @@ export const ToolWorkstation: React.FC<ToolWorkstationProps> = ({ tool, initialF
         {needsFile(id) && (
           <FileDropzone
             multiple={MULTI_TOOLS.includes(id)}
-            accept={id === 'jpg-to-pdf' ? 'image/*' : '.pdf,application/pdf'}
+            accept={
+              id === 'jpg-to-pdf'
+                ? 'image/*'
+                : id === 'office-to-pdf'
+                ? '.docx,.doc,.xlsx,.xls,.csv,.pptx,.ppt,.html,.htm'
+                : '.pdf,application/pdf'
+            }
             onFilesSelected={handleFilesSelected}
             files={files}
             onRemoveFile={handleRemove}
             onMoveFile={id === 'merge-pdf' || id === 'jpg-to-pdf' ? handleMove : undefined}
             badges={id === 'compare-pdf' ? ['A', 'B'] : undefined}
-            label={id === 'jpg-to-pdf' ? 'Choose Image Files (JPG, PNG, WebP…)' : id === 'compare-pdf' ? 'Choose two PDFs (original, then modified)' : id === 'merge-pdf' ? 'Choose PDF files to merge' : 'Choose PDF File'}
+            label={
+              id === 'office-to-pdf'
+                ? 'Choose Word (.docx), Excel (.xlsx), PowerPoint (.pptx), or HTML'
+                : id === 'jpg-to-pdf'
+                ? 'Choose Image Files (JPG, PNG, WebP…)'
+                : id === 'compare-pdf'
+                ? 'Choose two PDFs (original, then modified)'
+                : id === 'merge-pdf'
+                ? 'Choose PDF files to merge'
+                : 'Choose PDF File'
+            }
           />
         )}
 
